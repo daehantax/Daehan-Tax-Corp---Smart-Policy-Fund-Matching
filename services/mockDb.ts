@@ -4,8 +4,9 @@ import { CsvService } from './csvService';
 // Simulated delay helper
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Replace this URL with your deployed Google Apps Script Web App URL
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec'; 
+// [중요] 구글 스프레드시트 Apps Script 배포 후 생성된 URL을 아래에 입력하세요.
+// 예시: 'https://script.google.com/macros/s/AKfycbx.../exec'
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec'; 
 
 export const MockDbService = {
   // Check if the user is a VIP client (Gatekeeping via CSV Data)
@@ -44,30 +45,31 @@ export const MockDbService = {
 
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
-    await delay(1000);
-    
-    console.log('[Service] Submitting to Google Sheet:', data);
+    // 1. URL이 설정되지 않았을 경우 (테스트 모드)
+    if (GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+        console.warn('[MockDb] Google Script URL이 설정되지 않았습니다. 콘솔에만 출력합니다.');
+        console.log('[Data]', data);
+        await delay(1000);
+        return true; 
+    }
 
     try {
-      // NOTE: In a real deployment, you would use a Google Apps Script Web App 
-      // acting as a proxy to avoid CORS issues or handle the POST request.
-      // Below is an example of how the fetch would look.
-      
-      /* 
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
+      // 2. 실제 구글 시트로 전송
+      await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
+        mode: 'no-cors', // 중요: 구글 스크립트로 전송 시 CORS 회피를 위해 no-cors 사용
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8', // Google Apps Script requires this content type to avoid CORS preflight sometimes
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(data)
       });
-      if (!response.ok) throw new Error('Network response was not ok');
-      */
-
-      // For this demo, we assume success
+      
+      console.log('[Success] Data sent to Google Sheet');
       return true;
+
     } catch (error) {
       console.error('Google Sheet Submission Error:', error);
+      // 실패하더라도 사용자 경험을 위해 true를 반환하거나 별도 에러 처리를 할 수 있습니다.
       return false;
     }
   }
