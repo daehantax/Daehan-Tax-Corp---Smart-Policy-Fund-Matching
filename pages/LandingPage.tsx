@@ -76,18 +76,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
         <div className="absolute top-0 right-0 p-12 opacity-10">
           <Building2 size={300} />
         </div>
-        <div className="max-w-4xl mx-auto text-center relative z-10 flex flex-col items-center">
-          
-          {/* Logo in Hero */}
-          <div className="mb-6 p-2 bg-white/10 rounded-2xl backdrop-blur-sm inline-block">
-             <img 
-                src="/logo.png" 
-                alt="대한세무법인" 
-                className="h-16 w-auto object-contain" 
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-             />
-          </div>
-
+        <div className="max-w-4xl mx-auto text-center relative z-10">
           <h1 className="text-3xl md:text-5xl font-bold mb-6 leading-tight">
             대한세무법인<br/>
             <span className="text-blue-300">맞춤형 정책자금</span> 스마트 매칭

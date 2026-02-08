@@ -3,7 +3,7 @@ import { UserSession, Grant, BizCategory, BizRegions, BizRegionType } from '../t
 import { CsvService } from '../services/csvService'; 
 import { GrantCard } from '../components/GrantCard';
 import { ConsultationModal } from '../components/ConsultationModal';
-import { Search, Filter, Bell, LogOut, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Lightbulb, CheckCircle2 } from 'lucide-react';
+import { Search, Filter, Bell, LogOut, Briefcase, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Lightbulb, CheckCircle2 } from 'lucide-react';
 import { Button } from '../components/Button';
 
 interface DashboardProps {
@@ -190,26 +190,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
           
-          {/* Logo Area: Expects logo.png in public folder */}
+          {/* [로고 영역] 이미지 로고를 사용하려면 아래 주석을 해제하고 img 태그를 사용하세요 */}
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.reload()}>
-            <img 
-                src="/logo.png" 
-                alt="Daehan Tax Corp" 
-                className="h-9 w-auto object-contain"
-                onError={(e) => {
-                    // Fallback if image not found
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                }}
-            />
-             {/* Fallback Icon */}
-            <div className="hidden bg-blue-900 text-white p-1.5 rounded-lg">
-              <ManagementIcon size={20} />
+            {/* 예시: <img src="/logo.png" alt="대한세무법인 로고" className="h-8 w-auto" /> */}
+            
+            {/* 현재 기본 로고 (아이콘 + 텍스트) */}
+            <div className="bg-blue-900 text-white p-1.5 rounded-lg">
+              <Briefcase size={20} />
             </div>
-
-            <span className="font-bold text-xl text-slate-800 tracking-tight">
-                Daehan Tax <span className="text-xs font-normal text-slate-500">for BizInfo</span>
-            </span>
+            <span className="font-bold text-xl text-slate-800 tracking-tight">Daehan Tax <span className="text-xs font-normal text-slate-500">for BizInfo</span></span>
           </div>
           
           <div className="flex items-center gap-4">
