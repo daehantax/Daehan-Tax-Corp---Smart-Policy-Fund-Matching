@@ -10,7 +10,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // 2. 배포 -> 새 배포 -> '웹 앱' 선택 -> 액세스 권한: '모든 사용자' -> 배포 클릭
 // 3. 생성된 '웹 앱 URL'을 복사해서 아래 따옴표 안에 붙여넣으세요.
 // ==============================================================================
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec'; 
+const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec'; 
 
 export const MockDbService = {
   // Check if the user is a VIP client (Gatekeeping via CSV Data)
@@ -50,7 +50,7 @@ export const MockDbService = {
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
     // 1. URL이 설정되지 않았을 경우 (개발 모드 안내)
-    if (GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID_HERE') || GOOGLE_SCRIPT_URL === '') {
+    if (GOOGLE_SCRIPT_URL.includes('') || GOOGLE_SCRIPT_URL === '') {
         console.warn('===========================================================');
         console.warn('[주의] 구글 스크립트 URL이 설정되지 않았습니다!');
         console.warn('services/mockDb.ts 파일의 GOOGLE_SCRIPT_URL 변수를 수정해주세요.');
