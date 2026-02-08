@@ -46,7 +46,7 @@ export const MockDbService = {
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
     // 1. URL이 설정되지 않았을 경우 (테스트 모드)
-    if (GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+    if (GOOGLE_SCRIPT_URL.includes('https://script.google.com/macros/s/AKfycbw2fKGERltWlvNg_2fVEKjpAX6aNKAxhWrqHC02W11bh0rhmCOxvUErRe-wJCG1xBkF0g/exec')) {
         console.warn('[MockDb] Google Script URL이 설정되지 않았습니다. 콘솔에만 출력합니다.');
         console.log('[Data]', data);
         await delay(1000);
