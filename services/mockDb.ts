@@ -50,7 +50,8 @@ export const MockDbService = {
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
     // 1. URL이 설정되지 않았을 경우 (개발 모드 안내)
-    if (GOOGLE_SCRIPT_URL.includes('') || GOOGLE_SCRIPT_URL === '') {
+    // 수정됨: 빈 문자열('') 포함 여부가 아니라, 'YOUR_SCRIPT_ID'가 포함되어 있는지 확인
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
         console.warn('===========================================================');
         console.warn('[주의] 구글 스크립트 URL이 설정되지 않았습니다!');
         console.warn('services/mockDb.ts 파일의 GOOGLE_SCRIPT_URL 변수를 수정해주세요.');
