@@ -2,14 +2,22 @@ import Papa from 'papaparse';
 import { ClientData, BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_CLIENT_DB, MOCK_GRANTS } from '../constants';
 
+let cachedClientDb: ClientData[] | null = null;
+let cachedGrantDb: Grant[] | null = null;
+
 export const CsvService = {
-  // 1. 고객사 데이터 로드 (기존 유지)
+  // 1. 고객사 데이터 로드
   async getClientData(): Promise<ClientData[]> {
+    if (cachedClientDb) {
+      return cachedClientDb;
+    }
+
     try {
-      const response = await fetch('/data/dhadress_processed_data_20260125_182336.csv');
+      // Use relative path for better compatibility
+      const response = await fetch('./data/dhadress_processed_data_20260125_182336.csv');
       
       if (!response.ok) {
-        console.warn('Customer CSV not found, using internal mock data.');
+        console.warn('Customer CSV not found (response not ok), using internal mock data.');
         return MOCK_CLIENT_DB;
       }
 
@@ -20,19 +28,27 @@ export const CsvService = {
           header: true,
           skipEmptyLines: true,
           complete: (results: any) => {
-             const data = results.data.map((row: any) => ({
-               id: row.id || Math.random().toString(36).substr(2, 9),
-               company_name: row.company_name || row['회사명'] || '',
-               ceo_name: row.ceo_name || row['대표자명'] || '',
-               biz_type: row.biz_type || row['기업형태'] || '',
-               biz_number: row.biz_number || row['사업자등록번호'] || row['사업자번호'] || '',
-               address: row.address || row['주소'] || '',
-               address_detail: row.address_detail || row['상세주소'] || '',
-               phone: row.phone || row['연락처'] || '',
-               biz_category: row.biz_category || row['업종'] || '',
-               biz_item: row.biz_item || row['종목'] || ''
-             })) as ClientData[];
-             resolve(data);
+             if (results.data && results.data.length > 0) {
+                 const data = results.data.map((row: any) => ({
+                   id: row.id || Math.random().toString(36).substr(2, 9),
+                   company_name: row.company_name || row['회사명'] || '',
+                   ceo_name: row.ceo_name || row['대표자명'] || '',
+                   biz_type: row.biz_type || row['기업형태'] || '',
+                   biz_number: row.biz_number || row['사업자등록번호'] || row['사업자번호'] || '',
+                   address: row.address || row['주소'] || '',
+                   address_detail: row.address_detail || row['상세주소'] || '',
+                   phone: row.phone || row['연락처'] || '',
+                   biz_category: row.biz_category || row['업종'] || '',
+                   biz_item: row.biz_item || row['종목'] || ''
+                 })) as ClientData[];
+                 
+                 console.log(`[CsvService] Loaded ${data.length} client records.`);
+                 cachedClientDb = data;
+                 resolve(data);
+             } else {
+                 console.warn('[CsvService] Parsed CSV is empty, using mock data.');
+                 resolve(MOCK_CLIENT_DB);
+             }
           },
           error: (err: any) => {
              console.error('Customer CSV Parse Error:', err);
@@ -46,11 +62,14 @@ export const CsvService = {
     }
   },
 
-  // 2. 정책자금 데이터 로드 (수정됨: 정상 파일명 및 컬럼 매핑)
+  // 2. 정책자금 데이터 로드
   async getGrantData(): Promise<Grant[]> {
+    if (cachedGrantDb) {
+        return cachedGrantDb;
+    }
+
     try {
-      // 정상 파일명으로 수정
-      const response = await fetch('/data/policy_fund_20260205_data.csv');
+      const response = await fetch('./data/policy_fund_20260205_data.csv');
       
       if (!response.ok) {
         console.warn('Policy Fund CSV not found, using internal mock data.');
@@ -58,7 +77,9 @@ export const CsvService = {
       }
 
       const csvText = await response.text();
-      return this.parseGrantCsv(csvText);
+      const data = await this.parseGrantCsv(csvText);
+      cachedGrantDb = data;
+      return data;
 
     } catch (error) {
       console.error('Policy CSV Load Failed:', error);
@@ -74,11 +95,10 @@ export const CsvService = {
           skipEmptyLines: true,
           complete: (results: any) => {
              const data = results.data.map((row: any, index: number) => {
-               // CSV 헤더와 매핑 (제공해주신 파일 기준)
                const categoryRaw = row['지원분야'] || row['category'] || '기타';
                const title = row['공고명'] || row['title'] || '제목 없음';
                
-               // Smart Tagging Logic (Analyzes title & category)
+               // Smart Tagging Logic
                const tags: string[] = [];
                const textToAnalyze = (title + ' ' + categoryRaw).toLowerCase();
 
@@ -113,7 +133,7 @@ export const CsvService = {
                  detailUrl: row['공고상세URL'] || row['detailUrl'] || '#',
                  supportAmount: row['지원금액'] || '',
                  views: Math.floor(Math.random() * 1000),
-                 tags: tags // Add the calculated tags
+                 tags: tags 
                };
              }) as Grant[];
              
@@ -127,7 +147,6 @@ export const CsvService = {
       });
   },
 
-  // ... (기존 헬퍼 함수들 유지)
   mapRegion(address: string): BizRegionType | '전체' {
     if (!address) return '전체';
     const normalizedAddr = address.trim();

@@ -22,14 +22,21 @@ export const MockDbService = {
     
     // Normalize input: remove hyphens and spaces
     const normalizedInput = inputBrn.replace(/[^0-9]/g, '');
+    
+    console.log(`[Verify] Checking BRN: ${inputBrn} (Normalized: ${normalizedInput})`);
+    console.log(`[Verify] DB Size: ${clientDb.length}`);
 
     // Search in the DB
     const matchedClient = clientDb.find(client => {
-      const normalizedDbBrn = client.biz_number.replace(/[^0-9]/g, '');
-      return normalizedDbBrn === normalizedInput;
+      // Robust matching: handle potential undefined or non-string values
+      const rawBrn = client.biz_number || '';
+      const normalizedDbBrn = String(rawBrn).replace(/[^0-9]/g, '');
+      return normalizedDbBrn === normalizedInput && normalizedInput.length > 0;
     });
 
     if (matchedClient) {
+      console.log(`[Verify] Match Found: ${matchedClient.company_name}`);
+      
       // Smart Auto-Mapping for Filters
       const region = CsvService.mapRegion(matchedClient.address);
       const industry = CsvService.mapIndustry(matchedClient.biz_category);
@@ -42,6 +49,8 @@ export const MockDbService = {
         industry: industry, // Auto-mapped industry
         region: region      // Auto-mapped region
       };
+    } else {
+        console.warn(`[Verify] No match found for BRN: ${normalizedInput}`);
     }
     
     return null;
