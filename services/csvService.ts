@@ -2,6 +2,21 @@ import Papa from 'papaparse';
 import { ClientData, BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_CLIENT_DB, MOCK_GRANTS } from '../constants';
 
+// ==============================================================================
+// [1순위] 구글 스프레드시트 (실시간 연동)
+// - 스프레드시트 '웹에 게시' 링크를 넣으면 가장 우선적으로 이 데이터를 사용합니다.
+// ==============================================================================
+const GOOGLE_SHEET_CLIENT_URL = '' as string; 
+const GOOGLE_SHEET_GRANT_URL = '' as string;  
+
+// ==============================================================================
+// [2순위] 로컬 파일 (서버 파일)
+// - 구글 시트 링크가 없거나 연결 실패 시, public/data 폴더에 있는 파일을 사용합니다.
+// ==============================================================================
+// 브라우저는 '/data/...' 로 요청하면 자동으로 public/data 폴더를 찾아갑니다.
+const LOCAL_CLIENT_CSV = '/data/dhadress_processed_data_20260125_182336.csv';
+const LOCAL_GRANT_CSV = '/data/policy_fund_20260205_data.csv';
+
 let cachedClientDb: ClientData[] | null = null;
 let cachedGrantDb: Grant[] | null = null;
 
@@ -13,16 +28,43 @@ export const CsvService = {
     }
 
     try {
-      // Use relative path for better compatibility
-      const response = await fetch('./data/dhadress_processed_data_20260125_182336.csv');
+      let csvText = '';
       
-      if (!response.ok) {
-        console.warn('Customer CSV not found (response not ok), using internal mock data.');
-        return MOCK_CLIENT_DB;
+      // [1단계] 구글 시트 시도
+      if (GOOGLE_SHEET_CLIENT_URL && GOOGLE_SHEET_CLIENT_URL.startsWith('http')) {
+        try {
+          const response = await fetch(GOOGLE_SHEET_CLIENT_URL);
+          if (response.ok) {
+            csvText = await response.text();
+            console.log('[CsvService] 구글 시트에서 고객 데이터를 불러왔습니다.');
+          }
+        } catch (e) {
+          console.warn('[CsvService] 구글 시트 연결 실패, 로컬 파일을 시도합니다.', e);
+        }
       }
 
-      const csvText = await response.text();
+      // [2단계] 로컬 파일 시도 (구글 시트 실패 또는 미설정 시)
+      if (!csvText) {
+        try {
+          console.log(`[CsvService] 로컬 파일 로딩 시도: ${LOCAL_CLIENT_CSV}`);
+          const response = await fetch(LOCAL_CLIENT_CSV);
+          if (response.ok) {
+            csvText = await response.text();
+            console.log('[CsvService] 로컬 파일에서 고객 데이터를 불러왔습니다.');
+          } else {
+             console.error(`[CsvService] 로컬 파일 찾기 실패 (${response.status}). 경로를 확인해주세요.`);
+          }
+        } catch (e) {
+          console.error('[CsvService] 로컬 파일 로딩 중 에러 발생:', e);
+        }
+      }
       
+      // [3단계] 데이터 파싱 (데이터가 없으면 비상용 샘플 데이터 MOCK_CLIENT_DB 반환)
+      if (!csvText) {
+          console.warn('[CsvService] 데이터를 불러올 수 없어 샘플 데이터를 사용합니다.');
+          return MOCK_CLIENT_DB;
+      }
+
       return new Promise((resolve) => {
         Papa.parse(csvText, {
           header: true,
@@ -42,22 +84,22 @@ export const CsvService = {
                    biz_item: row.biz_item || row['종목'] || ''
                  })) as ClientData[];
                  
-                 console.log(`[CsvService] Loaded ${data.length} client records.`);
+                 console.log(`[CsvService] 고객 데이터 ${data.length}건 파싱 완료.`);
                  cachedClientDb = data;
                  resolve(data);
              } else {
-                 console.warn('[CsvService] Parsed CSV is empty, using mock data.');
+                 console.warn('[CsvService] CSV 파일이 비어있습니다. 샘플 데이터를 사용합니다.');
                  resolve(MOCK_CLIENT_DB);
              }
           },
           error: (err: any) => {
-             console.error('Customer CSV Parse Error:', err);
+             console.error('고객 CSV 파싱 에러:', err);
              resolve(MOCK_CLIENT_DB);
           }
         });
       });
     } catch (error) {
-      console.error('Customer CSV Load Failed:', error);
+      console.error('고객 데이터 로드 실패:', error);
       return MOCK_CLIENT_DB;
     }
   },
@@ -69,25 +111,54 @@ export const CsvService = {
     }
 
     try {
-      const response = await fetch('./data/policy_fund_20260205_data.csv');
+      let csvText = '';
       
-      if (!response.ok) {
-        console.warn('Policy Fund CSV not found, using internal mock data.');
-        return MOCK_GRANTS; 
+      // [1단계] 구글 시트 시도
+      if (GOOGLE_SHEET_GRANT_URL && GOOGLE_SHEET_GRANT_URL.startsWith('http')) {
+        try {
+          const response = await fetch(GOOGLE_SHEET_GRANT_URL);
+          if (response.ok) {
+            csvText = await response.text();
+            console.log('[CsvService] 구글 시트에서 정책 자금 데이터를 불러왔습니다.');
+          }
+        } catch (e) {
+             console.warn('[CsvService] 구글 시트 연결 실패, 로컬 파일을 시도합니다.', e);
+        }
       }
 
-      const csvText = await response.text();
+      // [2단계] 로컬 파일 시도
+      if (!csvText) {
+          try {
+            console.log(`[CsvService] 로컬 파일 로딩 시도: ${LOCAL_GRANT_CSV}`);
+            const response = await fetch(LOCAL_GRANT_CSV);
+            if (response.ok) {
+              csvText = await response.text();
+              console.log('[CsvService] 로컬 파일에서 정책 자금 데이터를 불러왔습니다.');
+            } else {
+               console.error(`[CsvService] 로컬 파일 찾기 실패 (${response.status}). 경로를 확인해주세요.`);
+            }
+          } catch (e) {
+            console.error('[CsvService] 로컬 파일 로딩 중 에러 발생:', e);
+          }
+      }
+
+      // [3단계] 데이터 파싱 (데이터가 없으면 비상용 샘플 데이터 MOCK_GRANTS 반환)
+      if (!csvText) {
+          console.warn('[CsvService] 데이터를 불러올 수 없어 샘플 데이터를 사용합니다.');
+          return MOCK_GRANTS;
+      }
+
       const data = await this.parseGrantCsv(csvText);
       cachedGrantDb = data;
       return data;
 
     } catch (error) {
-      console.error('Policy CSV Load Failed:', error);
+      console.error('정책자금 데이터 로드 실패:', error);
       return MOCK_GRANTS;
     }
   },
 
-  // Helper to parse grant CSV and apply Smart Tagging
+  // Helper: 정책자금 CSV 파싱 및 스마트 태깅
   parseGrantCsv(csvText: string): Promise<Grant[]> {
     return new Promise((resolve) => {
         Papa.parse(csvText, {
@@ -98,7 +169,7 @@ export const CsvService = {
                const categoryRaw = row['지원분야'] || row['category'] || '기타';
                const title = row['공고명'] || row['title'] || '제목 없음';
                
-               // Smart Tagging Logic
+               // 스마트 태깅 로직 (제목과 분야를 분석하여 태그 자동 생성)
                const tags: string[] = [];
                const textToAnalyze = (title + ' ' + categoryRaw).toLowerCase();
 
@@ -140,7 +211,7 @@ export const CsvService = {
              resolve(data);
           },
           error: (err: any) => {
-             console.error('Policy CSV Parse Error:', err);
+             console.error('정책자금 CSV 파싱 에러:', err);
              resolve(MOCK_GRANTS);
           }
         });
