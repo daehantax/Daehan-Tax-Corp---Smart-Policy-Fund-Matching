@@ -5,18 +5,14 @@ import { CsvService } from './csvService';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ==============================================================================
-// [사장님 필독]
-// 이 URL 하나로 두 가지 기능이 동작합니다.
-//   1) 상담 신청 접수 (doPost)  2) 고객사 사업자번호 확인 (doGet)
+// [사장님 필독] 구글 Apps Script 연동 URL 설정 (기능별로 분리)
 //
-// 사업자번호 확인 기능을 켜려면:
-// 1. 구글 스프레드시트 -> 확장프로그램 -> Apps Script에 접속하세요.
-// 2. 이 저장소의 docs/google-apps-script-verify.gs 파일 내용을
-//    기존 코드 아래에 붙여넣고, 파일 상단의 스프레드시트 ID를 수정하세요.
-// 3. 배포 -> 배포 관리 -> 연필 아이콘 -> 버전: '새 버전' -> 배포
-//    (URL은 그대로 유지되므로 아래 값을 바꿀 필요 없습니다)
+// 1) 상담 신청 접수용 (doPost가 있는 기존 스크립트)
+const GOOGLE_INQUIRY_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec';
+//
+// 2) 고객사 사업자번호 확인용 (docs/google-apps-script-verify.gs를 배포한 스크립트)
+const GOOGLE_VERIFY_URL: string = 'https://script.google.com/macros/s/AKfycbxx97oQyt2dVIM_5xGMjABa6M3-Ahakj7gYH7xEX17mnfHgJAEQpnlnC8rnmZbPeptEUA/exec';
 // ==============================================================================
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec';
 
 // 개발/테스트용: 스크립트 URL이 설정되지 않았을 때만 통과되는 테스트 사업자번호
 const DEV_TEST_BRN = '1234567890';
@@ -31,7 +27,7 @@ export const MockDbService = {
     if (!normalizedInput) return null;
 
     // URL이 설정되지 않았을 경우 (개발 모드)
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+    if (!GOOGLE_VERIFY_URL || GOOGLE_VERIFY_URL.includes('YOUR_SCRIPT_ID')) {
       console.warn('[Verify] 구글 스크립트 URL이 설정되지 않아 테스트 번호만 조회됩니다.');
       await delay(600);
       if (normalizedInput === DEV_TEST_BRN) {
@@ -49,7 +45,7 @@ export const MockDbService = {
 
     try {
       const response = await fetch(
-        `${GOOGLE_SCRIPT_URL}?action=verify&brn=${encodeURIComponent(normalizedInput)}`
+        `${GOOGLE_VERIFY_URL}?action=verify&brn=${encodeURIComponent(normalizedInput)}`
       );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -78,10 +74,10 @@ export const MockDbService = {
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
     // 1. URL이 설정되지 않았을 경우 (개발 모드 안내)
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+    if (!GOOGLE_INQUIRY_URL || GOOGLE_INQUIRY_URL.includes('YOUR_SCRIPT_ID')) {
         console.warn('===========================================================');
         console.warn('[주의] 구글 스크립트 URL이 설정되지 않았습니다!');
-        console.warn('services/mockDb.ts 파일의 GOOGLE_SCRIPT_URL 변수를 수정해주세요.');
+        console.warn('services/mockDb.ts 파일의 GOOGLE_INQUIRY_URL 변수를 수정해주세요.');
         console.warn('전송하려던 데이터:', data);
         console.warn('===========================================================');
         await delay(1000); // 가짜 로딩 시간
@@ -92,7 +88,7 @@ export const MockDbService = {
       // 2. 실제 구글 시트로 전송
       // mode: 'no-cors'는 브라우저 보안 정책을 우회하기 위해 필수입니다.
       // 이 모드에서는 응답(response) 내용을 읽을 수 없지만(opaque), 데이터는 전송됩니다.
-      await fetch(GOOGLE_SCRIPT_URL, {
+      await fetch(GOOGLE_INQUIRY_URL, {
         method: 'POST',
         mode: 'no-cors',
         headers: {
