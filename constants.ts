@@ -1,4 +1,4 @@
-import { Grant, BizCategory, ClientData } from './types';
+import { Grant, BizCategory } from './types';
 
 export const MOCK_GRANTS: Grant[] = [
   {
@@ -130,22 +130,5 @@ export const MOCK_GRANTS: Grant[] = [
     detailUrl: 'https://www.bizinfo.go.kr',
     views: 400,
     supportAmount: '전문가 컨설팅 3회'
-  }
-];
-
-// 이제 실제 데이터는 public/data/dhadress_processed_data_20260125_182336.csv 파일에서 로드됩니다.
-// 이 배열은 CSV 파일 로드 실패 시 테스트용으로 사용되는 비상용(Fallback) 데이터입니다.
-export const MOCK_CLIENT_DB: ClientData[] = [
-  {
-    id: 'fallback_1',
-    company_name: '테스트용 샘플기업',
-    ceo_name: '김테스트',
-    biz_type: '법인',
-    biz_number: '123-45-67890',
-    address: '서울특별시 강남구 테헤란로',
-    address_detail: '123번지',
-    phone: '010-0000-0000',
-    biz_category: '서비스업',
-    biz_item: '소프트웨어 개발'
   }
 ];

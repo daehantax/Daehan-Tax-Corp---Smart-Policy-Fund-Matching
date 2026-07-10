@@ -5,61 +5,79 @@ import { CsvService } from './csvService';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ==============================================================================
-// [사장님 필독] 
+// [사장님 필독]
+// 이 URL 하나로 두 가지 기능이 동작합니다.
+//   1) 상담 신청 접수 (doPost)  2) 고객사 사업자번호 확인 (doGet)
+//
+// 사업자번호 확인 기능을 켜려면:
 // 1. 구글 스프레드시트 -> 확장프로그램 -> Apps Script에 접속하세요.
-// 2. 배포 -> 새 배포 -> '웹 앱' 선택 -> 액세스 권한: '모든 사용자' -> 배포 클릭
-// 3. 생성된 '웹 앱 URL'을 복사해서 아래 따옴표 안에 붙여넣으세요.
+// 2. 이 저장소의 docs/google-apps-script-verify.gs 파일 내용을
+//    기존 코드 아래에 붙여넣고, 파일 상단의 스프레드시트 ID를 수정하세요.
+// 3. 배포 -> 배포 관리 -> 연필 아이콘 -> 버전: '새 버전' -> 배포
+//    (URL은 그대로 유지되므로 아래 값을 바꿀 필요 없습니다)
 // ==============================================================================
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec'; 
+const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec';
+
+// 개발/테스트용: 스크립트 URL이 설정되지 않았을 때만 통과되는 테스트 사업자번호
+const DEV_TEST_BRN = '1234567890';
 
 export const MockDbService = {
-  // Check if the user is a VIP client (Gatekeeping via CSV Data)
+  // 고객사 사업자번호 확인
+  // 고객 명단은 서버(Apps Script + 비공개 스프레드시트)에만 존재하며,
+  // 브라우저에는 입력한 번호의 일치 여부와 최소 정보만 내려옵니다.
   async verifyClient(inputBrn: string): Promise<UserSession | null> {
-    await delay(600); // Simulate processing
-    
-    // Load fresh data from CSV
-    const clientDb = await CsvService.getClientData();
-    
     // Normalize input: remove hyphens and spaces
     const normalizedInput = inputBrn.replace(/[^0-9]/g, '');
-    
-    console.log(`[Verify] Checking BRN: ${inputBrn} (Normalized: ${normalizedInput})`);
-    console.log(`[Verify] DB Size: ${clientDb.length}`);
+    if (!normalizedInput) return null;
 
-    // Search in the DB
-    const matchedClient = clientDb.find(client => {
-      // Robust matching: handle potential undefined or non-string values
-      const rawBrn = client.biz_number || '';
-      const normalizedDbBrn = String(rawBrn).replace(/[^0-9]/g, '');
-      return normalizedDbBrn === normalizedInput && normalizedInput.length > 0;
-    });
+    // URL이 설정되지 않았을 경우 (개발 모드)
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+      console.warn('[Verify] 구글 스크립트 URL이 설정되지 않아 테스트 번호만 조회됩니다.');
+      await delay(600);
+      if (normalizedInput === DEV_TEST_BRN) {
+        return {
+          type: 'CLIENT',
+          identifier: DEV_TEST_BRN,
+          companyName: '테스트용 샘플기업',
+          ceoName: '김테스트',
+          industry: CsvService.mapIndustry('서비스업'),
+          region: CsvService.mapRegion('서울특별시 강남구')
+        };
+      }
+      return null;
+    }
 
-    if (matchedClient) {
-      console.log(`[Verify] Match Found: ${matchedClient.company_name}`);
-      
-      // Smart Auto-Mapping for Filters
-      const region = CsvService.mapRegion(matchedClient.address);
-      const industry = CsvService.mapIndustry(matchedClient.biz_category);
+    try {
+      const response = await fetch(
+        `${GOOGLE_SCRIPT_URL}?action=verify&brn=${encodeURIComponent(normalizedInput)}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const result = await response.json();
+
+      if (!result.found) {
+        console.warn(`[Verify] No match found for BRN: ${normalizedInput}`);
+        return null;
+      }
 
       return {
         type: 'CLIENT',
-        identifier: matchedClient.biz_number,
-        companyName: matchedClient.company_name,
-        ceoName: matchedClient.ceo_name,
-        industry: industry, // Auto-mapped industry
-        region: region      // Auto-mapped region
+        identifier: normalizedInput,
+        companyName: result.companyName || '',
+        ceoName: result.ceoName || '',
+        industry: CsvService.mapIndustry(result.bizCategory || ''),
+        region: CsvService.mapRegion(result.regionHint || '')
       };
-    } else {
-        console.warn(`[Verify] No match found for BRN: ${normalizedInput}`);
+    } catch (error) {
+      console.error('[Verify] 사업자번호 확인 중 오류:', error);
+      return null;
     }
-    
-    return null;
   },
 
   // Save general inquiry to Google Sheets
   async submitInquiry(data: GeneralInquiry): Promise<boolean> {
     // 1. URL이 설정되지 않았을 경우 (개발 모드 안내)
-    // 수정됨: 빈 문자열('') 포함 여부가 아니라, 'YOUR_SCRIPT_ID'가 포함되어 있는지 확인
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
         console.warn('===========================================================');
         console.warn('[주의] 구글 스크립트 URL이 설정되지 않았습니다!');
@@ -76,13 +94,13 @@ export const MockDbService = {
       // 이 모드에서는 응답(response) 내용을 읽을 수 없지만(opaque), 데이터는 전송됩니다.
       await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', 
+        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data)
       });
-      
+
       console.log('[Success] 상담 신청 데이터가 구글 시트로 전송되었습니다.');
       return true;
 

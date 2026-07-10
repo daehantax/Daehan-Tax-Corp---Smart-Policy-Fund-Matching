@@ -26,20 +26,6 @@ export interface GeneralInquiry {
   requestDetails: string;
 }
 
-// Structure matching the provided CSV screenshot
-export interface ClientData {
-  id: string;
-  company_name: string;
-  ceo_name: string;
-  biz_type: string;     // e.g. 법인, 개인
-  biz_number: string;   // e.g. 680-82-00118
-  address: string;
-  address_detail: string;
-  phone: string;
-  biz_category: string; // e.g. 서비스업
-  biz_item: string;     // e.g. 자원봉사활동
-}
-
 export interface UserSession {
   type: 'CLIENT' | 'GUEST';
   identifier: string; // BRN or Email
