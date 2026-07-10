@@ -3,7 +3,6 @@ import { Button } from '../components/Button';
 import { GeneralInquiry, UserSession } from '../types';
 import { MockDbService } from '../services/mockDb';
 import { ShieldCheck, Users, ArrowRight, Building2, TrendingUp, AlertCircle, Briefcase } from 'lucide-react';
-import { MOCK_CLIENT_DB } from '../constants';
 
 interface LandingPageProps {
   onLogin: (session: UserSession) => void;
@@ -159,7 +158,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
                     {!clientNotFound && (
                         <div className="text-xs text-slate-400 mt-2">
-                          * CSV 데이터 연동 완료 (dhadress_processed_data_20260125_182336.csv)
+                          * 입력하신 번호는 조회 목적으로만 사용되며 저장되지 않습니다.
                         </div>
                     )}
                   </div>
