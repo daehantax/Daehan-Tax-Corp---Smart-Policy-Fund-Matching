@@ -14,7 +14,8 @@ const GOOGLE_SHEET_GRANT_URL = '' as string;
 
 // [2순위] 로컬 파일 (서버 파일)
 // - 구글 시트 링크가 없거나 연결 실패 시, public/data 폴더에 있는 파일을 사용합니다.
-const LOCAL_GRANT_CSV = '/data/policy_fund_20260205_data.csv';
+// - GitHub Pages처럼 하위 경로로 서빙되는 환경에서도 동작하도록 상대 경로를 사용합니다.
+const LOCAL_GRANT_CSV = './data/policy_fund_20260205_data.csv';
 
 let cachedGrantDb: Grant[] | null = null;
 
