@@ -30,6 +30,8 @@ jobs:
       - name: Fetch latest grants from Bizinfo API
         env:
           BIZINFO_API_KEY: ${{ secrets.BIZINFO_API_KEY }}
+          # 직접 접속 차단 시 우회용 구글 Apps Script 웹앱 URL (선택, 미설정 시 무시됨)
+          BIZINFO_RELAY_URL: ${{ secrets.BIZINFO_RELAY_URL }}
         run: node scripts/sync-bizinfo.mjs
 
       - name: Commit & push if data changed

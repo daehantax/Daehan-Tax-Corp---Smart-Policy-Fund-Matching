@@ -19,6 +19,10 @@ import { fileURLToPath } from 'node:url';
 
 const API_URL = 'https://www.bizinfo.go.kr/uss/rss/bizinfoApi.do';
 const API_KEY = process.env.BIZINFO_API_KEY;
+// 기업마당이 GitHub 서버의 직접 접속을 차단할 때 사용하는 우회 경로.
+// docs/google-apps-script-bizinfo-relay.gs 를 웹앱으로 배포한 URL을
+// 저장소 시크릿 BIZINFO_RELAY_URL 로 등록하면 직접 호출 실패 시 자동 사용된다.
+const RELAY_URL = process.env.BIZINFO_RELAY_URL || '';
 const SEARCH_CNT = Number(process.env.BIZINFO_SEARCH_CNT || 1000); // 1회 조회 건수
 const DROP_EXPIRED = process.env.BIZINFO_KEEP_EXPIRED !== '1';     // 마감 지난 공고 제외(기본)
 
@@ -94,10 +98,18 @@ async function main() {
   }
 
   async function fetchItems(cnt) {
-    const url = `${API_URL}?crtfcKey=${encodeURIComponent(API_KEY)}&dataType=json&searchCnt=${cnt}`;
+    const query = `crtfcKey=${encodeURIComponent(API_KEY)}&dataType=json&searchCnt=${cnt}`;
     console.log(`[sync-bizinfo] API 호출: ${API_URL} (searchCnt=${cnt})`);
 
-    const res = await fetchWithRetry(url);
+    let res;
+    try {
+      res = await fetchWithRetry(`${API_URL}?${query}`);
+    } catch (err) {
+      if (!RELAY_URL) throw err;
+      console.warn(`[sync-bizinfo] 직접 호출 실패(${err.cause?.code || err.name}) → 구글 중계(RELAY) 경유로 재시도`);
+      const sep = RELAY_URL.includes('?') ? '&' : '?';
+      res = await fetchWithRetry(`${RELAY_URL}${sep}${query}`);
+    }
     if (!res.ok) {
       console.error(`[sync-bizinfo] API 응답 오류: HTTP ${res.status}`);
       console.error(await res.text().catch(() => ''));
