@@ -76,11 +76,28 @@ async function main() {
     process.exit(1);
   }
 
+  // 일시적 네트워크 오류(접속 타임아웃 등) 대비: 최대 4회, 점점 길게 기다리며 재시도
+  async function fetchWithRetry(url, attempts = 4) {
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        return await fetch(url, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(60_000),
+        });
+      } catch (err) {
+        if (i === attempts) throw err;
+        const waitSec = 15 * i;
+        console.warn(`[sync-bizinfo] 호출 실패(${i}/${attempts}): ${err.cause?.code || err.name}. ${waitSec}초 후 재시도...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+      }
+    }
+  }
+
   async function fetchItems(cnt) {
     const url = `${API_URL}?crtfcKey=${encodeURIComponent(API_KEY)}&dataType=json&searchCnt=${cnt}`;
     console.log(`[sync-bizinfo] API 호출: ${API_URL} (searchCnt=${cnt})`);
 
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetchWithRetry(url);
     if (!res.ok) {
       console.error(`[sync-bizinfo] API 응답 오류: HTTP ${res.status}`);
       console.error(await res.text().catch(() => ''));
