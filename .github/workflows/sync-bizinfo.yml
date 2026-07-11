@@ -1,0 +1,44 @@
+# 기업마당 오픈 API에서 최신 지원사업 공고를 받아 public/data/ 에 반영합니다.
+# - 매일 KST 새벽 5시(UTC 20시) 자동 실행 + Actions 탭에서 수동 실행(workflow_dispatch) 가능
+# - 사전 준비: 저장소 Settings → Secrets and variables → Actions 에 BIZINFO_API_KEY 등록
+# - main 브랜치에서 데이터가 갱신되면 deploy-pages.yml 이 이어서 사이트를 재배포합니다.
+name: Sync Bizinfo Grants
+
+on:
+  schedule:
+    - cron: '0 20 * * *' # KST 05:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-bizinfo
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch latest grants from Bizinfo API
+        env:
+          BIZINFO_API_KEY: ${{ secrets.BIZINFO_API_KEY }}
+        run: node scripts/sync-bizinfo.mjs
+
+      - name: Commit & push if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/policy_fund_latest.csv public/data/grants_meta.json
+          if git diff --cached --quiet; then
+            echo "변경된 데이터가 없어 커밋을 건너뜁니다."
+          else
+            git commit -m "chore: 기업마당 공고 데이터 자동 동기화"
+            git push
+          fi

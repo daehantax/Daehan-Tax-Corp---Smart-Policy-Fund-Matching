@@ -13,9 +13,14 @@ import { MOCK_GRANTS } from '../constants';
 const GOOGLE_SHEET_GRANT_URL = '' as string;
 
 // [2순위] 로컬 파일 (서버 파일)
-// - 구글 시트 링크가 없거나 연결 실패 시, public/data 폴더에 있는 파일을 사용합니다.
+// - 구글 시트 링크가 없거나 연결 실패 시, public/data 폴더에 있는 파일을 순서대로 시도합니다.
+// - policy_fund_latest.csv 는 기업마당 오픈 API 동기화(GitHub Actions)가 매일 갱신하는 파일이며,
+//   아직 생성 전이거나 로드 실패 시 기존 스냅샷 파일로 폴백합니다.
 // - GitHub Pages처럼 하위 경로로 서빙되는 환경에서도 동작하도록 상대 경로를 사용합니다.
-const LOCAL_GRANT_CSV = './data/policy_fund_20260205_data.csv';
+const LOCAL_GRANT_CSV_CANDIDATES = [
+  './data/policy_fund_latest.csv',
+  './data/policy_fund_20260205_data.csv',
+];
 
 let cachedGrantDb: Grant[] | null = null;
 
@@ -42,19 +47,22 @@ export const CsvService = {
         }
       }
 
-      // [2단계] 로컬 파일 시도
+      // [2단계] 로컬 파일 시도 (최신 동기화 파일 → 스냅샷 순서로 폴백)
       if (!csvText) {
-          try {
-            console.log(`[CsvService] 로컬 파일 로딩 시도: ${LOCAL_GRANT_CSV}`);
-            const response = await fetch(LOCAL_GRANT_CSV);
-            if (response.ok) {
-              csvText = await response.text();
-              console.log('[CsvService] 로컬 파일에서 정책 자금 데이터를 불러왔습니다.');
-            } else {
-               console.error(`[CsvService] 로컬 파일 찾기 실패 (${response.status}). 경로를 확인해주세요.`);
+          for (const csvPath of LOCAL_GRANT_CSV_CANDIDATES) {
+            try {
+              console.log(`[CsvService] 로컬 파일 로딩 시도: ${csvPath}`);
+              const response = await fetch(csvPath);
+              if (response.ok) {
+                csvText = await response.text();
+                console.log(`[CsvService] 로컬 파일에서 정책 자금 데이터를 불러왔습니다: ${csvPath}`);
+                break;
+              } else {
+                 console.warn(`[CsvService] 로컬 파일 찾기 실패 (${response.status}): ${csvPath}`);
+              }
+            } catch (e) {
+              console.error(`[CsvService] 로컬 파일 로딩 중 에러 발생 (${csvPath}):`, e);
             }
-          } catch (e) {
-            console.error('[CsvService] 로컬 파일 로딩 중 에러 발생:', e);
           }
       }
 
