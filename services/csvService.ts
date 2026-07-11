@@ -126,6 +126,7 @@ export const CsvService = {
                  endDate: row['신청종료일자'] || row['endDate'] || '',
                  registrationDate: row['등록일자'] || row['registrationDate'] || '',
                  detailUrl: row['공고상세URL'] || row['detailUrl'] || '#',
+                 periodText: row['신청기간'] || row['periodText'] || '',
                  supportAmount: row['지원금액'] || '',
                  views: Math.floor(Math.random() * 1000),
                  tags: tags

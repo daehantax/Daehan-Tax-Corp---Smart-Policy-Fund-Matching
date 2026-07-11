@@ -76,39 +76,51 @@ async function main() {
     process.exit(1);
   }
 
-  const url = `${API_URL}?crtfcKey=${encodeURIComponent(API_KEY)}&dataType=json&searchCnt=${SEARCH_CNT}`;
-  console.log(`[sync-bizinfo] API 호출: ${API_URL} (searchCnt=${SEARCH_CNT})`);
+  async function fetchItems(cnt) {
+    const url = `${API_URL}?crtfcKey=${encodeURIComponent(API_KEY)}&dataType=json&searchCnt=${cnt}`;
+    console.log(`[sync-bizinfo] API 호출: ${API_URL} (searchCnt=${cnt})`);
 
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) {
-    console.error(`[sync-bizinfo] API 응답 오류: HTTP ${res.status}`);
-    console.error(await res.text().catch(() => ''));
-    process.exit(1);
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) {
+      console.error(`[sync-bizinfo] API 응답 오류: HTTP ${res.status}`);
+      console.error(await res.text().catch(() => ''));
+      process.exit(1);
+    }
+
+    const bodyText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      console.error('[sync-bizinfo] JSON 파싱 실패. 응답 앞부분:');
+      console.error(bodyText.slice(0, 1000));
+      console.error('※ 인증키 오류(HTML 오류 페이지) 또는 dataType 미지원일 수 있습니다.');
+      process.exit(1);
+    }
+
+    // 응답 구조 방어적 탐색: 문서상 jsonArray 이지만 변형 대비
+    const found =
+      data?.jsonArray ??
+      data?.item ??
+      data?.items ??
+      data?.body?.items ??
+      (Array.isArray(data) ? data : null);
+
+    if (!Array.isArray(found) || found.length === 0) {
+      console.error('[sync-bizinfo] 공고 목록을 찾지 못했습니다. 응답 최상위 키:', Object.keys(data ?? {}));
+      console.error('응답 앞부분:', bodyText.slice(0, 1000));
+      process.exit(1);
+    }
+    return found;
   }
 
-  const bodyText = await res.text();
-  let data;
-  try {
-    data = JSON.parse(bodyText);
-  } catch {
-    console.error('[sync-bizinfo] JSON 파싱 실패. 응답 앞부분:');
-    console.error(bodyText.slice(0, 1000));
-    console.error('※ 인증키 오류(HTML 오류 페이지) 또는 dataType 미지원일 수 있습니다.');
-    process.exit(1);
-  }
+  let items = await fetchItems(SEARCH_CNT);
 
-  // 응답 구조 방어적 탐색: 문서상 jsonArray 이지만 변형 대비
-  const items =
-    data?.jsonArray ??
-    data?.item ??
-    data?.items ??
-    data?.body?.items ??
-    (Array.isArray(data) ? data : null);
-
-  if (!Array.isArray(items) || items.length === 0) {
-    console.error('[sync-bizinfo] 공고 목록을 찾지 못했습니다. 응답 최상위 키:', Object.keys(data ?? {}));
-    console.error('응답 앞부분:', bodyText.slice(0, 1000));
-    process.exit(1);
+  // API가 알려주는 전체 건수(totCnt)가 이번 조회보다 많으면 전체를 다시 조회
+  const totCnt = Number(items[0]?.totCnt || 0);
+  if (totCnt > items.length) {
+    console.log(`[sync-bizinfo] 전체 ${totCnt}건 중 ${items.length}건만 수신 → 전체 재조회`);
+    items = await fetchItems(totCnt);
   }
 
   // 첫 항목의 실제 필드명을 로그로 남겨 스펙 검증에 활용
@@ -145,6 +157,7 @@ async function main() {
       period.end,                                                                  // 신청종료일자
       registered,                                                                  // 등록일자
       detailUrl || '#',                                                            // 공고상세URL
+      period.start ? '' : period.raw,                                              // 신청기간(원문) — 날짜 파싱 불가 시 '상시' 등 표시용
     ]);
   }
 
@@ -153,7 +166,7 @@ async function main() {
     process.exit(1);
   }
 
-  const header = ['번호', '소관부처', '사업수행기관', '지원분야', '공고명', '신청시작일자', '신청종료일자', '등록일자', '공고상세URL'];
+  const header = ['번호', '소관부처', '사업수행기관', '지원분야', '공고명', '신청시작일자', '신청종료일자', '등록일자', '공고상세URL', '신청기간'];
   const csv = '﻿' + [header, ...rows].map(r => r.map(csvField).join(',')).join('\r\n') + '\r\n';
 
   await mkdir(path.dirname(OUT_CSV), { recursive: true });

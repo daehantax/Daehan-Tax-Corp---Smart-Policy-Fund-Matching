@@ -8,6 +8,7 @@ export interface Grant {
   endDate: string;     // 신청종료일자 (YYYY-MM-DD)
   registrationDate: string; // 등록일자 (YYYY-MM-DD)
   detailUrl: string;   // 공고상세URL
+  periodText?: string; // 신청기간 원문 (날짜 파싱 불가 시: '상시', '예산 소진시까지' 등)
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;

@@ -92,7 +92,11 @@ export const GrantCard: React.FC<GrantCardProps> = ({
             <Clock size={16} className="text-blue-600 mt-0.5" />
             <div>
               <span className="text-xs text-slate-400 block">신청기간</span>
-              <span className="font-semibold text-slate-800">{grant.startDate} ~ {grant.endDate}</span>
+              <span className="font-semibold text-slate-800">
+                {grant.startDate && grant.endDate
+                  ? `${grant.startDate} ~ ${grant.endDate}`
+                  : grant.periodText || grant.startDate || grant.endDate || '상시접수 (공고문 참조)'}
+              </span>
             </div>
           </div>
           {grant.supportAmount && (
