@@ -7,6 +7,7 @@ name: Sync Bizinfo Grants
 on:
   schedule:
     - cron: '0 20 * * *' # KST 05:00
+    - cron: '0 23 * * *' # KST 08:00 (새벽 실행이 네트워크 차단 등으로 실패했을 때의 백업)
   workflow_dispatch:
 
 permissions:
