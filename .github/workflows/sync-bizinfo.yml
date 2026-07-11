@@ -8,9 +8,6 @@ on:
   schedule:
     - cron: '0 20 * * *' # KST 05:00
   workflow_dispatch:
-  # [임시] main 병합 전 테스트용 트리거 — 병합 후 이 push 블록은 제거하세요.
-  push:
-    branches: [claude/gijungmadang-api-integration-yyehsi]
 
 permissions:
   contents: write
