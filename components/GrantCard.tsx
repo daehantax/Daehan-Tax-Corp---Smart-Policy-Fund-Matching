@@ -68,12 +68,25 @@ export const GrantCard: React.FC<GrantCardProps> = ({
         </h3>
         
         {/* Org Info */}
-        <div className="flex items-center gap-2 mb-4 text-xs text-slate-500">
+        <div className="flex items-center gap-2 mb-2 text-xs text-slate-500">
            <Building2 size={14} className="text-slate-400"/>
            <span className="font-medium text-slate-700">{grant.department}</span>
            <span className="w-[1px] h-3 bg-slate-300"></span>
            <span className="truncate max-w-[120px]">{grant.agency}</span>
         </div>
+
+        {/* 지원대상 (기업마당 데이터) */}
+        {grant.target && (
+          <div className="flex items-start gap-1.5 mb-2 text-xs text-slate-500">
+            <Tag size={13} className="text-slate-400 mt-0.5 shrink-0"/>
+            <span className="line-clamp-1"><span className="text-slate-400">대상</span> <span className="text-slate-600">{grant.target}</span></span>
+          </div>
+        )}
+
+        {/* 사업개요 (기업마당 데이터) */}
+        {grant.summary && (
+          <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">{grant.summary}</p>
+        )}
 
         {/* Smart Tags Display */}
         {grant.tags && grant.tags.length > 0 && (

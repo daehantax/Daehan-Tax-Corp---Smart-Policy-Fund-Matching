@@ -20,6 +20,38 @@ const INTEREST_KEYWORDS = [
   '💵 저금리 대출'
 ];
 
+// 지역 매칭: 기업마당 해시태그(정밀) 우선, 없으면 기존 문자열 포함 방식으로 폴백
+// (해시태그는 '전남광주'처럼 통합 표기가 있어 부분 일치로 비교)
+const matchesRegion = (g: Grant, region: string): boolean => {
+  if (region === '전체' || region === '전국') return true;
+  if (g.hashtags && g.hashtags.length > 0 && g.hashtags.some(h => h.includes(region) || region.includes(h))) {
+    return true;
+  }
+  return g.department.includes(region) || g.title.includes(region) || g.agency.includes(region);
+};
+
+// 분야 매칭: 대분류에 더해 중분류까지 확인
+const matchesCategory = (g: Grant, cat: string): boolean => {
+  if (cat === '전체') return true;
+  return g.category.includes(cat) || (g.subCategory || '').includes(cat);
+};
+
+// 정렬: 마감임박순(마감일 없는 상시 공고는 뒤로) / 최신등록순
+const sortGrants = (list: Grant[], mode: 'deadline' | 'recent'): Grant[] => {
+  const copy = [...list];
+  if (mode === 'recent') {
+    copy.sort((a, b) => (b.registrationDate || '').localeCompare(a.registrationDate || ''));
+  } else {
+    copy.sort((a, b) => {
+      if (!a.endDate && !b.endDate) return (b.registrationDate || '').localeCompare(a.registrationDate || '');
+      if (!a.endDate) return 1;
+      if (!b.endDate) return -1;
+      return a.endDate.localeCompare(b.endDate);
+    });
+  }
+  return copy;
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [grants, setGrants] = useState<Grant[]>([]);
   const [filteredGrants, setFilteredGrants] = useState<Grant[]>([]);
@@ -48,6 +80,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [isRecommendationMode, setIsRecommendationMode] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedGrant, setSelectedGrant] = useState<Grant | null>(null);
+  const [sortMode, setSortMode] = useState<'deadline' | 'recent'>('deadline');
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
 
   // 1. Load Data
   useEffect(() => {
@@ -56,10 +90,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       const data = await CsvService.getGrantData();
       setGrants(data);
       // Don't set filteredGrants here immediately if we want to show the selector first
-      setFilteredGrants(data); 
+      setFilteredGrants(data);
       setDataLoading(false);
     };
     loadData();
+
+    // 실제 동기화 시각 로드 (없으면 배너에 기본 문구 유지)
+    fetch('./data/grants_meta.json')
+      .then(res => (res.ok ? res.json() : null))
+      .then(meta => {
+        if (meta?.syncedAt) {
+          setSyncedAt(new Date(meta.syncedAt).toLocaleString('ko-KR', {
+            month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+          }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Update LocalStorage whenever favorites change
@@ -104,18 +150,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     } else {
       // Normal filtering
       if (selectedCategory !== BizCategory.ALL) {
-        result = result.filter(g => g.category.includes(selectedCategory) || g.category === selectedCategory);
+        result = result.filter(g => matchesCategory(g, selectedCategory));
       }
       if (selectedRegion !== '전체') {
-        result = result.filter(g => {
-          return g.department.includes(selectedRegion) || 
-                 g.title.includes(selectedRegion) || 
-                 g.agency.includes(selectedRegion) || 
-                 selectedRegion === '전국';
-        });
+        result = result.filter(g => matchesRegion(g, selectedRegion));
       }
       if (searchQuery) {
-        result = result.filter(g => g.title.includes(searchQuery) || g.department.includes(searchQuery) || g.agency.includes(searchQuery));
+        const q = searchQuery.trim();
+        result = result.filter(g =>
+          g.title.includes(q) ||
+          g.department.includes(q) ||
+          g.agency.includes(q) ||
+          (g.summary || '').includes(q) ||
+          (g.target || '').includes(q)
+        );
       }
     }
 
@@ -123,34 +171,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     if (result.length === 0 && !showFavoritesOnly && !searchQuery && grants.length > 0) {
       setIsRecommendationMode(true);
       const recommendations = grants.filter(g => {
-         const catMatch = selectedCategory === BizCategory.ALL ? true : g.category.includes(selectedCategory);
-         const regionMatch = selectedRegion === '전체' ? true : (g.department.includes('전국') || g.department.includes('중소벤처기업부') || g.department.includes(selectedRegion));
+         const catMatch = selectedCategory === BizCategory.ALL ? true : matchesCategory(g, selectedCategory);
+         const regionMatch = selectedRegion === '전체' ? true : (g.department.includes('전국') || g.department.includes('중소벤처기업부') || matchesRegion(g, selectedRegion));
          return catMatch && regionMatch;
       });
-      setFilteredGrants(recommendations.length > 0 ? recommendations : grants.slice(0, 6));
+      setFilteredGrants(sortGrants(recommendations.length > 0 ? recommendations : grants.slice(0, 6), sortMode));
     } else {
       setIsRecommendationMode(false);
-      setFilteredGrants(result);
+      setFilteredGrants(sortGrants(result, sortMode));
     }
 
-  }, [selectedCategory, selectedRegion, searchQuery, grants, showFavoritesOnly, favorites, dataLoading, selectedInterests]);
+  }, [selectedCategory, selectedRegion, searchQuery, grants, showFavoritesOnly, favorites, dataLoading, selectedInterests, sortMode]);
 
   // Counts for UI
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { [BizCategory.ALL]: grants.length };
     Object.values(BizCategory).forEach(cat => {
       if (cat !== BizCategory.ALL) {
-        counts[cat] = grants.filter(g => g.category.includes(cat)).length;
+        counts[cat] = grants.filter(g => matchesCategory(g, cat)).length;
       }
     });
     return counts;
   }, [grants]);
 
   const regionCounts = useMemo(() => {
-    const counts: Record<string, number> = { '전국': grants.length }; 
+    const counts: Record<string, number> = { '전국': grants.length };
     BizRegions.forEach(reg => {
       if (reg !== '전국') {
-        counts[reg] = grants.filter(g => g.department.includes(reg) || g.title.includes(reg)).length;
+        counts[reg] = grants.filter(g => matchesRegion(g, reg)).length;
       }
     });
     return counts;
@@ -222,7 +270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 relative">
                 <div className="text-center mb-8">
                     <h2 className="text-2xl font-bold text-slate-800 mb-2">사장님, 어떤 자금이 가장 필요하신가요?</h2>
-                    <p className="text-slate-500">선택하신 키워드를 분석하여 900여 개의 공고 중 최적의 사업을 매칭해드립니다.</p>
+                    <p className="text-slate-500">선택하신 키워드를 분석하여 {grants.length.toLocaleString()}개의 공고 중 최적의 사업을 매칭해드립니다.</p>
                 </div>
                 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
@@ -275,7 +323,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               맞춤형 정책자금 매칭 리포트
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              기업마당 공고 데이터가 동기화 되었습니다. (업데이트: {getLastMonday()})
+              기업마당 공고 데이터가 동기화 되었습니다. (업데이트: {syncedAt || getLastMonday()})
             </p>
           </div>
           <div className="text-xs text-slate-400 flex items-center gap-1">
@@ -393,9 +441,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 </span>
             )}
           </div>
-          <span className="flex items-center gap-1 cursor-pointer hover:text-blue-900 text-xs">
-            <Filter size={12}/> 정렬: 마감임박순
-          </span>
+          <button
+            onClick={() => setSortMode(prev => (prev === 'deadline' ? 'recent' : 'deadline'))}
+            className="flex items-center gap-1 cursor-pointer hover:text-blue-900 text-xs"
+            title="클릭하여 정렬 기준 변경"
+          >
+            <Filter size={12}/> 정렬: {sortMode === 'deadline' ? '마감임박순' : '최신등록순'} ▾
+          </button>
         </div>
         
         {/* Loading State */}
