@@ -9,6 +9,9 @@ export interface Grant {
   registrationDate: string; // 등록일자 (YYYY-MM-DD)
   detailUrl: string;   // 공고상세URL
   periodText?: string; // 신청기간 원문 (날짜 파싱 불가 시: '상시', '예산 소진시까지' 등)
+  target?: string;      // 지원대상 (예: 중소기업, 창업 7년 미만)
+  subCategory?: string; // 지원분야 중분류
+  hashtags?: string[];  // 기업마당 해시태그 (지역/분야 정밀 매칭용)
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;

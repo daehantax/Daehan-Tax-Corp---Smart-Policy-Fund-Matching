@@ -187,6 +187,11 @@ async function main() {
       registered,                                                                  // 등록일자
       detailUrl || '#',                                                            // 공고상세URL
       period.start ? '' : period.raw,                                              // 신청기간(원문) — 날짜 파싱 불가 시 '상시' 등 표시용
+      stripHtml(pick(item, ['trgetNm'])),                                          // 지원대상
+      stripHtml(pick(item, ['bsnsSumryCn'])).slice(0, 300),                        // 사업개요(요약)
+      stripHtml(pick(item, ['hashtags'])),                                         // 해시태그 (지역/분야 정밀 매칭용)
+      stripHtml(pick(item, ['pldirSportRealmMlsfcCodeNm'])),                       // 지원분야 중분류
+      pick(item, ['inqireCo']),                                                    // 조회수 (기업마당 실제 조회수)
     ]);
   }
 
@@ -195,7 +200,7 @@ async function main() {
     process.exit(1);
   }
 
-  const header = ['번호', '소관부처', '사업수행기관', '지원분야', '공고명', '신청시작일자', '신청종료일자', '등록일자', '공고상세URL', '신청기간'];
+  const header = ['번호', '소관부처', '사업수행기관', '지원분야', '공고명', '신청시작일자', '신청종료일자', '등록일자', '공고상세URL', '신청기간', '지원대상', '사업개요', '해시태그', '지원분야중분류', '조회수'];
   const csv = '﻿' + [header, ...rows].map(r => r.map(csvField).join(',')).join('\r\n') + '\r\n';
 
   await mkdir(path.dirname(OUT_CSV), { recursive: true });

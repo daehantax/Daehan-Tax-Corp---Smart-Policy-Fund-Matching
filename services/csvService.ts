@@ -92,10 +92,17 @@ export const CsvService = {
              const data = results.data.map((row: any, index: number) => {
                const categoryRaw = row['지원분야'] || row['category'] || '기타';
                const title = row['공고명'] || row['title'] || '제목 없음';
+               const summary = row['사업개요'] || row['summary'] || '';
+               const target = row['지원대상'] || '';
+               const subCategory = row['지원분야중분류'] || '';
+               const hashtags = String(row['해시태그'] || '')
+                 .split(/[,#/\s]+/)
+                 .map((t: string) => t.trim())
+                 .filter(Boolean);
 
-               // 스마트 태깅 로직 (제목과 분야를 분석하여 태그 자동 생성)
+               // 스마트 태깅 로직 (제목·분야에 더해 사업개요/지원대상/해시태그까지 분석)
                const tags: string[] = [];
-               const textToAnalyze = (title + ' ' + categoryRaw).toLowerCase();
+               const textToAnalyze = (title + ' ' + categoryRaw + ' ' + subCategory + ' ' + summary + ' ' + target + ' ' + hashtags.join(' ')).toLowerCase();
 
                if (textToAnalyze.includes('인력') || textToAnalyze.includes('고용') || textToAnalyze.includes('일자리') || textToAnalyze.includes('채용') || textToAnalyze.includes('청년')) {
                    tags.push('💰 인건비/고용');
@@ -128,7 +135,11 @@ export const CsvService = {
                  detailUrl: row['공고상세URL'] || row['detailUrl'] || '#',
                  periodText: row['신청기간'] || row['periodText'] || '',
                  supportAmount: row['지원금액'] || '',
-                 views: Math.floor(Math.random() * 1000),
+                 summary: summary,
+                 target: target,
+                 subCategory: subCategory,
+                 hashtags: hashtags,
+                 views: Number(row['조회수']) || 0,
                  tags: tags
                };
              }) as Grant[];
