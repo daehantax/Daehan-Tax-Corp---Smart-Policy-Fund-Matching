@@ -81,13 +81,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <span className="text-blue-300">맞춤형 정책자금</span> 스마트 매칭
           </h1>
           <p className="text-blue-100 text-lg md:text-xl mb-8 max-w-2xl mx-auto">
-            매주 월요일 업데이트되는 2만여 개의 정부지원 사업.<br/>
-            고객님의 업종과 조건에 딱 맞는 자금을 AI가 찾아드립니다.
+            매일 자동 업데이트되는 기업마당 정부지원 사업.<br/>
+            고객님의 지역과 업종에 딱 맞는 자금을 자동으로 매칭해드립니다.
           </p>
           <div className="flex justify-center gap-4 text-sm text-blue-200">
             <span className="flex items-center gap-1"><ShieldCheck size={16}/> 검증된 데이터</span>
-            <span className="flex items-center gap-1"><TrendingUp size={16}/> 매주 자동 갱신</span>
-            <span className="flex items-center gap-1"><Users size={16}/> 전문가 상시 매칭</span>
+            <span className="flex items-center gap-1"><TrendingUp size={16}/> 매일 자동 갱신</span>
+            <span className="flex items-center gap-1"><Users size={16}/> 고객사 맞춤 매칭</span>
           </div>
         </div>
       </div>

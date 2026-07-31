@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_GRANTS } from '../constants';
 import { supabase } from './supabaseClient';
+import { extractRegionCodes } from './matchingService';
 
 // ==============================================================================
 // 정책자금(공고) 데이터 소스 설정
@@ -74,6 +75,9 @@ function mapSupabaseRow(row: any): Grant {
     target: row.target || '',
     subCategory: row.sub_category || '',
     hashtags,
+    regionCodes: Array.isArray(row.region_codes) && row.region_codes.length > 0
+      ? row.region_codes
+      : extractRegionCodes(row.department, row.agency, hashtags.join(' '), row.title),
     views: Number(row.views) || 0,
     tags: computeSmartTags([row.title, row.category, row.sub_category, row.summary, row.target, hashtags.join(' ')]),
   };
@@ -186,11 +190,14 @@ export const CsvService = {
                // 스마트 태깅 (제목·분야에 더해 사업개요/지원대상/해시태그까지 분석)
                const tags = computeSmartTags([title, categoryRaw, subCategory, summary, target, hashtags.join(' ')]);
 
+               const department = row['소관부처'] || row['department'] || '관계부처';
+               const agency = row['사업수행기관'] || row['agency'] || '';
+
                return {
                  id: row['번호'] || row['id'] || `grant_${index}`,
                  title: title,
-                 department: row['소관부처'] || row['department'] || '관계부처',
-                 agency: row['사업수행기관'] || row['agency'] || '',
+                 department,
+                 agency,
                  category: categoryRaw,
                  startDate: row['신청시작일자'] || row['startDate'] || '',
                  endDate: row['신청종료일자'] || row['endDate'] || '',
@@ -202,6 +209,7 @@ export const CsvService = {
                  target: target,
                  subCategory: subCategory,
                  hashtags: hashtags,
+                 regionCodes: extractRegionCodes(department, agency, hashtags.join(' '), title),
                  views: Number(row['조회수']) || 0,
                  tags: tags
                };

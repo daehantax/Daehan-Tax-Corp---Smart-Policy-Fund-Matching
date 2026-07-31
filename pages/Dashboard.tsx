@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserSession, Grant, BizCategory, BizRegions, BizRegionType } from '../types';
-import { CsvService } from '../services/csvService'; 
+import { CsvService } from '../services/csvService';
+import { matchesRegion, matchesCategory, scoreAllGrants } from '../services/matchingService';
 import { GrantCard } from '../components/GrantCard';
-import { ConsultationModal } from '../components/ConsultationModal';
 import { Search, Filter, Bell, LogOut, Briefcase, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Lightbulb, CheckCircle2 } from 'lucide-react';
 import { Button } from '../components/Button';
 
@@ -20,26 +20,15 @@ const INTEREST_KEYWORDS = [
   '💵 저금리 대출'
 ];
 
-// 지역 매칭: 기업마당 해시태그(정밀) 우선, 없으면 기존 문자열 포함 방식으로 폴백
-// (해시태그는 '전남광주'처럼 통합 표기가 있어 부분 일치로 비교)
-const matchesRegion = (g: Grant, region: string): boolean => {
-  if (region === '전체' || region === '전국') return true;
-  if (g.hashtags && g.hashtags.length > 0 && g.hashtags.some(h => h.includes(region) || region.includes(h))) {
-    return true;
-  }
-  return g.department.includes(region) || g.title.includes(region) || g.agency.includes(region);
-};
+// 정렬: 맞춤순(매칭 점수) / 마감임박순(마감일 없는 상시 공고는 뒤로) / 최신등록순
+type SortMode = 'match' | 'deadline' | 'recent';
+const SORT_LABELS: Record<SortMode, string> = { match: '맞춤순', deadline: '마감임박순', recent: '최신등록순' };
 
-// 분야 매칭: 대분류에 더해 중분류까지 확인
-const matchesCategory = (g: Grant, cat: string): boolean => {
-  if (cat === '전체') return true;
-  return g.category.includes(cat) || (g.subCategory || '').includes(cat);
-};
-
-// 정렬: 마감임박순(마감일 없는 상시 공고는 뒤로) / 최신등록순
-const sortGrants = (list: Grant[], mode: 'deadline' | 'recent'): Grant[] => {
+const sortGrants = (list: Grant[], mode: SortMode, scores?: Map<string, { score: number }>): Grant[] => {
   const copy = [...list];
-  if (mode === 'recent') {
+  if (mode === 'match' && scores) {
+    copy.sort((a, b) => (scores.get(b.id)?.score || 0) - (scores.get(a.id)?.score || 0));
+  } else if (mode === 'recent') {
     copy.sort((a, b) => (b.registrationDate || '').localeCompare(a.registrationDate || ''));
   } else {
     copy.sort((a, b) => {
@@ -78,10 +67,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [showInterestSelector, setShowInterestSelector] = useState(true); // Show on first load
 
   const [isRecommendationMode, setIsRecommendationMode] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedGrant, setSelectedGrant] = useState<Grant | null>(null);
-  const [sortMode, setSortMode] = useState<'deadline' | 'recent'>('deadline');
+  // 고객사 로그인이면 기본 정렬 = 맞춤순 (매칭 점수 기반)
+  const [sortMode, setSortMode] = useState<SortMode>(session.type === 'CLIENT' ? 'match' : 'deadline');
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
+
+  // 매칭 점수: 고객사 지역·업종 + 선택한 관심 키워드로 전체 공고 점수화
+  const matchScores = useMemo(
+    () => scoreAllGrants(grants, session, selectedInterests),
+    [grants, session, selectedInterests]
+  );
 
   // 1. Load Data
   useEffect(() => {
@@ -167,21 +161,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       }
     }
 
-    // 2. Smart Fallback
+    // 2. Smart Fallback — 조건에 맞는 공고가 없으면 매칭 점수 상위 공고를 추천
+    //    (다른 지역 전용 등 점수 0인 공고는 제외하고, 있는 데이터로 계산한 점수순)
     if (result.length === 0 && !showFavoritesOnly && !searchQuery && grants.length > 0) {
       setIsRecommendationMode(true);
-      const recommendations = grants.filter(g => {
-         const catMatch = selectedCategory === BizCategory.ALL ? true : matchesCategory(g, selectedCategory);
-         const regionMatch = selectedRegion === '전체' ? true : (g.department.includes('전국') || g.department.includes('중소벤처기업부') || matchesRegion(g, selectedRegion));
-         return catMatch && regionMatch;
-      });
-      setFilteredGrants(sortGrants(recommendations.length > 0 ? recommendations : grants.slice(0, 6), sortMode));
+      const recommendations = grants
+        .filter(g => (matchScores.get(g.id)?.score || 0) > 0)
+        .sort((a, b) => (matchScores.get(b.id)?.score || 0) - (matchScores.get(a.id)?.score || 0))
+        .slice(0, 12);
+      setFilteredGrants(recommendations.length > 0 ? recommendations : sortGrants(grants.slice(0, 6), sortMode, matchScores));
     } else {
       setIsRecommendationMode(false);
-      setFilteredGrants(sortGrants(result, sortMode));
+      setFilteredGrants(sortGrants(result, sortMode, matchScores));
     }
 
-  }, [selectedCategory, selectedRegion, searchQuery, grants, showFavoritesOnly, favorites, dataLoading, selectedInterests, sortMode]);
+  }, [selectedCategory, selectedRegion, searchQuery, grants, showFavoritesOnly, favorites, dataLoading, selectedInterests, sortMode, matchScores]);
 
   // Counts for UI
   const categoryCounts = useMemo(() => {
@@ -203,11 +197,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     });
     return counts;
   }, [grants]);
-
-  const handleConsult = (grant: Grant) => {
-    setSelectedGrant(grant);
-    setIsModalOpen(true);
-  };
 
   const getLastMonday = () => {
     const d = new Date();
@@ -442,11 +431,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
             )}
           </div>
           <button
-            onClick={() => setSortMode(prev => (prev === 'deadline' ? 'recent' : 'deadline'))}
+            onClick={() => setSortMode(prev => (prev === 'match' ? 'deadline' : prev === 'deadline' ? 'recent' : 'match'))}
             className="flex items-center gap-1 cursor-pointer hover:text-blue-900 text-xs"
-            title="클릭하여 정렬 기준 변경"
+            title="클릭하여 정렬 기준 변경 (맞춤순 → 마감임박순 → 최신등록순)"
           >
-            <Filter size={12}/> 정렬: {sortMode === 'deadline' ? '마감임박순' : '최신등록순'} ▾
+            <Filter size={12}/> 정렬: {SORT_LABELS[sortMode]} ▾
           </button>
         </div>
         
@@ -455,7 +444,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
             <div className="py-20 text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
                 <p className="text-slate-500">정책자금 데이터를 분석하고 있습니다...</p>
-                <p className="text-xs text-slate-400 mt-2">(AI Keyword Matching...)</p>
+                <p className="text-xs text-slate-400 mt-2">(지역·업종·키워드 매칭 중...)</p>
             </div>
         )}
 
@@ -470,7 +459,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                                 사장님({selectedRegion}/{selectedCategory})께 딱 맞는 조건의 공고가 현재 없습니다.
                             </h4>
                             <p className="text-blue-700 text-sm">
-                                대신, <span className="font-bold underline">전국 규모의 지원사업</span>이나 사장님과 <span className="font-bold underline">유사한 업종</span>의 인기 공고를 AI가 찾아보았습니다!
+                                대신, 사장님의 <span className="font-bold underline">지역·업종·관심 키워드</span>와 매칭 점수가 높은 공고를 찾아보았습니다!
                             </p>
                         </div>
                     </div>
@@ -479,13 +468,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 {filteredGrants.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredGrants.map(grant => (
-                    <GrantCard 
-                        key={grant.id} 
-                        grant={grant} 
-                        onConsult={handleConsult} 
-                        userIndustry={session.industry}
+                    <GrantCard
+                        key={grant.id}
+                        grant={grant}
                         isFavorite={favorites.includes(grant.id)}
                         onToggleFavorite={toggleFavorite}
+                        matchReasons={
+                          session.type === 'CLIENT' && (sortMode === 'match' || isRecommendationMode)
+                            ? matchScores.get(grant.id)?.reasons
+                            : undefined
+                        }
                     />
                     ))}
                 </div>
@@ -517,12 +509,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
             </>
         )}
       </main>
-
-      <ConsultationModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        grant={selectedGrant} 
-      />
     </div>
   );
 };

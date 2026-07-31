@@ -12,6 +12,7 @@ export interface Grant {
   target?: string;      // 지원대상 (예: 중소기업, 창업 7년 미만)
   subCategory?: string; // 지원분야 중분류
   hashtags?: string[];  // 기업마당 해시태그 (지역/분야 정밀 매칭용)
+  regionCodes?: string[]; // 표준 지역코드 (전국/서울/…/제주) — DB region_codes 컬럼
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;
