@@ -33,6 +33,10 @@ jobs:
           BIZINFO_API_KEY: ${{ secrets.BIZINFO_API_KEY }}
           # 직접 접속 차단 시 우회용 구글 Apps Script 웹앱 URL (선택, 미설정 시 무시됨)
           BIZINFO_RELAY_URL: ${{ secrets.BIZINFO_RELAY_URL }}
+          # 수파베이스 policy_grants 업서트용 (선택, 미설정 시 CSV만 갱신됨)
+          # service_role 키는 절대 코드에 넣지 말고 반드시 Secrets로만 관리
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/sync-bizinfo.mjs
 
       - name: Commit & push if data changed
