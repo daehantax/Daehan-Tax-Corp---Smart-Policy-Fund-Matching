@@ -1,4 +1,4 @@
-import { GeneralInquiry, UserSession } from '../types';
+import { UserSession } from '../types';
 import { CsvService } from './csvService';
 import { supabase } from './supabaseClient';
 
@@ -14,12 +14,9 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 //     브라우저에는 일치 여부 + 상호명/대표자명 등 최소 정보만 내려옵니다.
 //   - 함수 코드: supabase/functions/verify-brn/index.ts (배포 방법은 docs/supabase-setup.md)
 //
-// [2순위·폴백] 구글 Apps Script 연동 URL (기능별로 분리)
+// [2순위·폴백] 구글 Apps Script 연동 URL
 //
-// 1) 상담 신청 접수용 (doPost가 있는 기존 스크립트)
-const GOOGLE_INQUIRY_URL: string = 'https://script.google.com/macros/s/AKfycbxyuQH8I1fnU1_8tT9c_p9M9NtAhXaNAuyxtKQ65wmQhiYle-b5m2xrcKlF_qmEDxwnjw/exec';
-//
-// 2) 고객사 사업자번호 확인용 (docs/google-apps-script-verify.gs를 배포한 스크립트)
+// 고객사 사업자번호 확인용 (docs/google-apps-script-verify.gs를 배포한 스크립트)
 const GOOGLE_VERIFY_URL: string = 'https://script.google.com/macros/s/AKfycbxx97oQyt2dVIM_5xGMjABa6M3-Ahakj7gYH7xEX17mnfHgJAEQpnlnC8rnmZbPeptEUA/exec';
 // ==============================================================================
 
@@ -104,42 +101,6 @@ export const MockDbService = {
     } catch (error) {
       console.error('[Verify] 사업자번호 확인 중 오류:', error);
       return null;
-    }
-  },
-
-  // Save general inquiry to Google Sheets
-  async submitInquiry(data: GeneralInquiry): Promise<boolean> {
-    // 1. URL이 설정되지 않았을 경우 (개발 모드 안내)
-    if (!GOOGLE_INQUIRY_URL || GOOGLE_INQUIRY_URL.includes('YOUR_SCRIPT_ID')) {
-        console.warn('===========================================================');
-        console.warn('[주의] 구글 스크립트 URL이 설정되지 않았습니다!');
-        console.warn('services/mockDb.ts 파일의 GOOGLE_INQUIRY_URL 변수를 수정해주세요.');
-        console.warn('전송하려던 데이터:', data);
-        console.warn('===========================================================');
-        await delay(1000); // 가짜 로딩 시간
-        return true; // 화면상으로는 성공한 척 처리
-    }
-
-    try {
-      // 2. 실제 구글 시트로 전송
-      // mode: 'no-cors'는 브라우저 보안 정책을 우회하기 위해 필수입니다.
-      // 이 모드에서는 응답(response) 내용을 읽을 수 없지만(opaque), 데이터는 전송됩니다.
-      await fetch(GOOGLE_INQUIRY_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-      });
-
-      console.log('[Success] 상담 신청 데이터가 구글 시트로 전송되었습니다.');
-      return true;
-
-    } catch (error) {
-      console.error('Google Sheet Submission Error:', error);
-      alert('데이터 전송 중 오류가 발생했습니다. 네트워크 상태를 확인해주세요.');
-      return false;
     }
   }
 };

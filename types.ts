@@ -23,14 +23,6 @@ export interface Grant {
   tags?: string[]; 
 }
 
-export interface GeneralInquiry {
-  name: string;
-  contact: string;
-  email: string;
-  industry: string;
-  requestDetails: string;
-}
-
 export interface UserSession {
   type: 'CLIENT' | 'GUEST';
   identifier: string; // BRN or Email
