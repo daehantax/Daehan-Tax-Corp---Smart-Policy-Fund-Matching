@@ -1,6 +1,7 @@
 {
-  "syncedAt": "2026-07-30T23:54:48.749Z",
-  "count": 1538,
+  "syncedAt": "2026-07-31T07:29:15.613Z",
+  "count": 1573,
   "expiredDropped": 0,
-  "source": "bizinfo-api"
+  "source": "bizinfo-api",
+  "supabaseSynced": true
 }
