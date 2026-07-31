@@ -1,18 +1,23 @@
 import Papa from 'papaparse';
 import { BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_GRANTS } from '../constants';
+import { supabase } from './supabaseClient';
 
 // ==============================================================================
 // 정책자금(공고) 데이터 소스 설정
 // ※ 고객 명단은 개인정보 보호를 위해 이 앱에서 절대 로드하지 않습니다.
-//    사업자번호 확인은 services/mockDb.ts를 통해 서버(Apps Script)에서 처리됩니다.
+//    사업자번호 확인은 services/mockDb.ts를 통해 서버에서 처리됩니다.
 // ==============================================================================
 
-// [1순위] 구글 스프레드시트 (실시간 연동)
-// - 스프레드시트 '웹에 게시' 링크를 넣으면 가장 우선적으로 이 데이터를 사용합니다.
+// [1순위] 수파베이스 policy_grants 테이블 (실시간 연동)
+// - services/supabaseClient.ts 에 연결 정보가 설정되어 있으면 가장 우선 사용합니다.
+// - 데이터는 GitHub Actions(scripts/sync-bizinfo.mjs)가 기업마당 API에서 매일 업서트합니다.
+
+// [2순위] 구글 스프레드시트
+// - 스프레드시트 '웹에 게시' 링크를 넣으면 수파베이스 실패 시 이 데이터를 사용합니다.
 const GOOGLE_SHEET_GRANT_URL = '' as string;
 
-// [2순위] 로컬 파일 (서버 파일)
+// [3순위] 로컬 파일 (서버 파일)
 // - 구글 시트 링크가 없거나 연결 실패 시, public/data 폴더에 있는 파일을 순서대로 시도합니다.
 // - policy_fund_latest.csv 는 기업마당 오픈 API 동기화(GitHub Actions)가 매일 갱신하는 파일이며,
 //   아직 생성 전이거나 로드 실패 시 기존 스냅샷 파일로 폴백합니다.
@@ -24,11 +29,89 @@ const LOCAL_GRANT_CSV_CANDIDATES = [
 
 let cachedGrantDb: Grant[] | null = null;
 
+// 스마트 태깅: 공고 텍스트를 분석해 관심 키워드 태그를 붙인다 (수파베이스/CSV 공용)
+function computeSmartTags(parts: (string | undefined)[]): string[] {
+  const tags: string[] = [];
+  const textToAnalyze = parts.filter(Boolean).join(' ').toLowerCase();
+
+  if (textToAnalyze.includes('인력') || textToAnalyze.includes('고용') || textToAnalyze.includes('일자리') || textToAnalyze.includes('채용') || textToAnalyze.includes('청년')) {
+      tags.push('💰 인건비/고용');
+  }
+  if (textToAnalyze.includes('시설') || textToAnalyze.includes('기계') || textToAnalyze.includes('장비') || textToAnalyze.includes('구축') || textToAnalyze.includes('스마트공장')) {
+      tags.push('🏭 시설/기계구입');
+  }
+  if (textToAnalyze.includes('마케팅') || textToAnalyze.includes('홍보') || textToAnalyze.includes('판로') || textToAnalyze.includes('전시회') || textToAnalyze.includes('입점')) {
+      tags.push('📢 마케팅/홍보');
+  }
+  if (textToAnalyze.includes('기술') || textToAnalyze.includes('연구') || textToAnalyze.includes('개발') || textToAnalyze.includes('r&d') || textToAnalyze.includes('특허')) {
+      tags.push('🧪 기술개발(R&D)');
+  }
+  if (textToAnalyze.includes('수출') || textToAnalyze.includes('해외') || textToAnalyze.includes('무역') || textToAnalyze.includes('글로벌')) {
+      tags.push('🚢 수출/해외진출');
+  }
+  if (textToAnalyze.includes('융자') || textToAnalyze.includes('대출') || textToAnalyze.includes('보증') || textToAnalyze.includes('금융') || textToAnalyze.includes('운전자금')) {
+      tags.push('💵 저금리 대출');
+  }
+  return tags;
+}
+
+// 수파베이스 policy_grants 한 행 → 앱 Grant 형식 변환
+function mapSupabaseRow(row: any): Grant {
+  const hashtags: string[] = Array.isArray(row.hashtags) ? row.hashtags : [];
+  return {
+    id: String(row.pblanc_id || row.id),
+    title: row.title || '제목 없음',
+    department: row.department || '관계부처',
+    agency: row.agency || '',
+    category: row.category || '기타',
+    startDate: row.start_date || '',
+    endDate: row.end_date || '',
+    registrationDate: row.registration_date || '',
+    detailUrl: row.detail_url || '#',
+    periodText: row.period_text || '',
+    supportAmount: '',
+    summary: row.summary || '',
+    target: row.target || '',
+    subCategory: row.sub_category || '',
+    hashtags,
+    views: Number(row.views) || 0,
+    tags: computeSmartTags([row.title, row.category, row.sub_category, row.summary, row.target, hashtags.join(' ')]),
+  };
+}
+
 export const CsvService = {
   // 정책자금 데이터 로드
   async getGrantData(): Promise<Grant[]> {
     if (cachedGrantDb) {
         return cachedGrantDb;
+    }
+
+    // [0단계] 수파베이스 시도 (연결 정보가 설정된 경우에만)
+    if (supabase) {
+      try {
+        // PostgREST는 한 번에 최대 1,000행까지만 주므로 페이지 단위로 끝까지 읽는다
+        const PAGE = 1000;
+        const rows: any[] = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabase
+            .from('policy_grants')
+            .select('*')
+            .eq('active', true)
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1);
+          if (error) throw error;
+          rows.push(...(data || []));
+          if (!data || data.length < PAGE) break;
+        }
+        if (rows.length > 0) {
+          console.log(`[CsvService] 수파베이스에서 정책자금 ${rows.length}건을 불러왔습니다.`);
+          cachedGrantDb = rows.map(mapSupabaseRow);
+          return cachedGrantDb;
+        }
+        console.warn('[CsvService] 수파베이스 공고가 0건 — 구글시트/CSV로 폴백합니다.');
+      } catch (e) {
+        console.warn('[CsvService] 수파베이스 연결 실패 — 구글시트/CSV로 폴백합니다.', e);
+      }
     }
 
     try {
@@ -100,28 +183,8 @@ export const CsvService = {
                  .map((t: string) => t.trim())
                  .filter(Boolean);
 
-               // 스마트 태깅 로직 (제목·분야에 더해 사업개요/지원대상/해시태그까지 분석)
-               const tags: string[] = [];
-               const textToAnalyze = (title + ' ' + categoryRaw + ' ' + subCategory + ' ' + summary + ' ' + target + ' ' + hashtags.join(' ')).toLowerCase();
-
-               if (textToAnalyze.includes('인력') || textToAnalyze.includes('고용') || textToAnalyze.includes('일자리') || textToAnalyze.includes('채용') || textToAnalyze.includes('청년')) {
-                   tags.push('💰 인건비/고용');
-               }
-               if (textToAnalyze.includes('시설') || textToAnalyze.includes('기계') || textToAnalyze.includes('장비') || textToAnalyze.includes('구축') || textToAnalyze.includes('스마트공장')) {
-                   tags.push('🏭 시설/기계구입');
-               }
-               if (textToAnalyze.includes('마케팅') || textToAnalyze.includes('홍보') || textToAnalyze.includes('판로') || textToAnalyze.includes('전시회') || textToAnalyze.includes('입점')) {
-                   tags.push('📢 마케팅/홍보');
-               }
-               if (textToAnalyze.includes('기술') || textToAnalyze.includes('연구') || textToAnalyze.includes('개발') || textToAnalyze.includes('r&d') || textToAnalyze.includes('특허')) {
-                   tags.push('🧪 기술개발(R&D)');
-               }
-               if (textToAnalyze.includes('수출') || textToAnalyze.includes('해외') || textToAnalyze.includes('무역') || textToAnalyze.includes('글로벌')) {
-                   tags.push('🚢 수출/해외진출');
-               }
-               if (textToAnalyze.includes('융자') || textToAnalyze.includes('대출') || textToAnalyze.includes('보증') || textToAnalyze.includes('금융') || textToAnalyze.includes('운전자금')) {
-                   tags.push('💵 저금리 대출');
-               }
+               // 스마트 태깅 (제목·분야에 더해 사업개요/지원대상/해시태그까지 분석)
+               const tags = computeSmartTags([title, categoryRaw, subCategory, summary, target, hashtags.join(' ')]);
 
                return {
                  id: row['번호'] || row['id'] || `grant_${index}`,

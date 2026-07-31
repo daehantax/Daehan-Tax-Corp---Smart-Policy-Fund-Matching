@@ -8,6 +8,10 @@
 //   1. 기업마당 오픈 API(JSON)를 호출해 최신 공고 목록을 받는다.
 //   2. 기존 CSV 스키마(번호,소관부처,...)로 변환해 public/data/policy_fund_latest.csv 저장
 //   3. 동기화 시각/건수를 public/data/grants_meta.json 에 기록
+//   4. SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY 가 설정되어 있으면
+//      수파베이스 policy_grants 테이블에도 업서트하고, 이번 동기화에 없는
+//      기존 공고는 active=false 로 숨긴다 (삭제하지 않음 — 이력 보존).
+//      수파베이스 업로드가 실패해도 CSV 폴백이 있으므로 작업 전체는 실패시키지 않는다.
 //
 // 안전장치: API 실패 또는 결과 0건이면 기존 파일을 절대 덮어쓰지 않고 종료코드 1로 끝난다.
 //           (GitHub Pages에는 직전 데이터가 그대로 남아 서비스에 영향 없음)
@@ -70,6 +74,73 @@ function parsePeriod(raw) {
 function csvField(v) {
   const s = String(v ?? '');
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// --- 수파베이스 연동 ----------------------------------------------------------
+
+/** 앱 화면의 지역 필터와 동일한 표준 지역코드 17개 */
+const REGION_CODES = ['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
+/** 축약 코드가 원문에 그대로 안 나오는 표기 보정 (충청북도→충북 등) */
+const REGION_ALIASES = { '충청북': '충북', '충청남': '충남', '전라북': '전북', '전라남': '전남', '경상북': '경북', '경상남': '경남' };
+
+/** 공고의 소관부처·수행기관·해시태그·제목에서 표준 지역코드를 추출 (없으면 전국) */
+function extractRegionCodes(...texts) {
+  const text = texts.filter(Boolean).join(' ');
+  const found = new Set();
+  for (const code of REGION_CODES) if (text.includes(code)) found.add(code);
+  for (const [alias, code] of Object.entries(REGION_ALIASES)) if (text.includes(alias)) found.add(code);
+  return found.size ? [...found] : ['전국'];
+}
+
+/**
+ * policy_grants 테이블 업서트 (수파베이스 REST API 직접 호출 — 별도 패키지 불필요)
+ * 실패 시 예외를 던지지 않고 false 반환 (CSV 폴백이 있으므로 전체 작업은 계속)
+ */
+async function syncToSupabase(records) {
+  const base = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!base || !key) {
+    console.log('[sync-bizinfo] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 미설정 → 수파베이스 업로드 건너뜀 (CSV만 갱신)');
+    return false;
+  }
+
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+  };
+  const runStart = new Date().toISOString();
+  const rows = records
+    .filter(r => r.pblanc_id)
+    .map(r => ({ ...r, active: true, synced_at: runStart }));
+  const skipped = records.length - rows.length;
+  if (skipped > 0) console.warn(`[sync-bizinfo] 공고 ID(pblancId) 없는 ${skipped}건은 수파베이스 업서트에서 제외`);
+
+  try {
+    // 1) 500건씩 나눠 업서트 (pblanc_id 충돌 시 갱신)
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const res = await fetch(`${base}/rest/v1/policy_grants?on_conflict=pblanc_id`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(chunk),
+      });
+      if (!res.ok) throw new Error(`업서트 실패 HTTP ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    }
+
+    // 2) 이번 동기화에 나타나지 않은 공고는 active=false 로 숨김 (삭제 안 함)
+    const res = await fetch(
+      `${base}/rest/v1/policy_grants?synced_at=lt.${encodeURIComponent(runStart)}&active=eq.true`,
+      { method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ active: false }) },
+    );
+    if (!res.ok) throw new Error(`비활성화 실패 HTTP ${res.status}: ${(await res.text()).slice(0, 500)}`);
+
+    console.log(`[sync-bizinfo] 수파베이스 policy_grants 업서트 완료: ${rows.length}건`);
+    return true;
+  } catch (err) {
+    console.error('[sync-bizinfo] ⚠ 수파베이스 업로드 실패 (앱은 CSV 폴백으로 계속 동작):', err.message || err);
+    return false;
+  }
 }
 
 // --- 메인 --------------------------------------------------------------------
@@ -158,6 +229,7 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10);
   const seen = new Set();
   const rows = [];
+  const grantRecords = []; // 수파베이스 policy_grants 업서트용 (CSV와 동일 데이터)
   let expired = 0;
   let no = 0;
 
@@ -176,23 +248,53 @@ async function main() {
 
     const registered = pick(item, ['creatPnttm', 'creatDe', 'registDe', 'pubDate']).slice(0, 10).replace(/\./g, '-');
 
+    const department = pick(item, ['jrsdInsttNm', 'jrsdInsttNmKr', 'department']) || '관계부처'; // 소관부처
+    const agency = pick(item, ['excInsttNm', 'operInsttNm', 'agency']);                          // 사업수행기관
+    const category = stripHtml(pick(item, ['pldirSportRealmLclasCodeNm', 'lclasNm', 'category'])) || '기타'; // 지원분야
+    const target = stripHtml(pick(item, ['trgetNm']));                                           // 지원대상
+    const summary = stripHtml(pick(item, ['bsnsSumryCn'])).slice(0, 300);                        // 사업개요(요약)
+    const hashtagsText = stripHtml(pick(item, ['hashtags']));                                    // 해시태그
+    const subCategory = stripHtml(pick(item, ['pldirSportRealmMlsfcCodeNm']));                   // 지원분야 중분류
+    const views = pick(item, ['inqireCo']);                                                      // 조회수
+    const periodText = period.start ? '' : period.raw;  // 날짜 파싱 불가 시 '상시' 등 표시용
+
     rows.push([
-      ++no,                                                                        // 번호
-      pick(item, ['jrsdInsttNm', 'jrsdInsttNmKr', 'department']) || '관계부처',    // 소관부처
-      pick(item, ['excInsttNm', 'operInsttNm', 'agency']),                         // 사업수행기관
-      stripHtml(pick(item, ['pldirSportRealmLclasCodeNm', 'lclasNm', 'category'])) || '기타', // 지원분야
-      title,                                                                       // 공고명
-      period.start,                                                                // 신청시작일자
-      period.end,                                                                  // 신청종료일자
-      registered,                                                                  // 등록일자
-      detailUrl || '#',                                                            // 공고상세URL
-      period.start ? '' : period.raw,                                              // 신청기간(원문) — 날짜 파싱 불가 시 '상시' 등 표시용
-      stripHtml(pick(item, ['trgetNm'])),                                          // 지원대상
-      stripHtml(pick(item, ['bsnsSumryCn'])).slice(0, 300),                        // 사업개요(요약)
-      stripHtml(pick(item, ['hashtags'])),                                         // 해시태그 (지역/분야 정밀 매칭용)
-      stripHtml(pick(item, ['pldirSportRealmMlsfcCodeNm'])),                       // 지원분야 중분류
-      pick(item, ['inqireCo']),                                                    // 조회수 (기업마당 실제 조회수)
+      ++no,           // 번호
+      department,     // 소관부처
+      agency,         // 사업수행기관
+      category,       // 지원분야
+      title,          // 공고명
+      period.start,   // 신청시작일자
+      period.end,     // 신청종료일자
+      registered,     // 등록일자
+      detailUrl || '#', // 공고상세URL
+      periodText,     // 신청기간(원문)
+      target,         // 지원대상
+      summary,        // 사업개요(요약)
+      hashtagsText,   // 해시태그 (지역/분야 정밀 매칭용)
+      subCategory,    // 지원분야 중분류
+      views,          // 조회수 (기업마당 실제 조회수)
     ]);
+
+    const hashtags = hashtagsText.split(/[,#/\s]+/).map(t => t.trim()).filter(Boolean);
+    grantRecords.push({
+      pblanc_id: id,
+      title,
+      department,
+      agency: agency || null,
+      category,
+      sub_category: subCategory || null,
+      start_date: period.start || null,   // date 컬럼은 빈 문자열 대신 NULL
+      end_date: period.end || null,
+      registration_date: registered || null,
+      period_text: periodText || null,
+      detail_url: detailUrl || null,
+      target: target || null,
+      summary: summary || null,
+      hashtags,
+      region_codes: extractRegionCodes(department, agency, hashtagsText, title),
+      views: Number(views) || 0,
+    });
   }
 
   if (rows.length === 0) {
@@ -205,13 +307,17 @@ async function main() {
 
   await mkdir(path.dirname(OUT_CSV), { recursive: true });
   await writeFile(OUT_CSV, csv, 'utf8');
+
+  // 수파베이스에도 업서트 (환경변수 미설정/실패 시 false — CSV 폴백으로 서비스 유지)
+  const supabaseSynced = await syncToSupabase(grantRecords);
+
   await writeFile(
     OUT_META,
-    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api' }, null, 2),
+    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api', supabaseSynced }, null, 2),
     'utf8',
   );
 
-  console.log(`[sync-bizinfo] 완료: ${rows.length}건 저장 (마감 제외 ${expired}건) → ${path.relative(ROOT, OUT_CSV)}`);
+  console.log(`[sync-bizinfo] 완료: ${rows.length}건 저장 (마감 제외 ${expired}건, 수파베이스 ${supabaseSynced ? '동기화됨' : '건너뜀'}) → ${path.relative(ROOT, OUT_CSV)}`);
 }
 
 main().catch(err => {
