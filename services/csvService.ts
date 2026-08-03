@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import { BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_GRANTS } from '../constants';
 import { supabase } from './supabaseClient';
-import { extractRegionCodes } from './matchingService';
+import { extractRegionCodes, REGION_ALIASES } from './matchingService';
 
 // ==============================================================================
 // 정책자금(공고) 데이터 소스 설정
@@ -225,17 +225,38 @@ export const CsvService = {
       });
   },
 
+  // 고객사 주소 → 표준 지역코드(서울/부산/…/제주).
+  // 주소는 대부분 "(13559 ) 경기도 성남시 …" 처럼 우편번호가 앞에 붙어 있고,
+  // "경상북도/충청남도" 같은 정식 도명은 축약 코드(경북/충남)가 원문에 없다.
+  // 예전 구현은 첫 단어("(13559")만 봐서 거의 모든 고객사가 '전체'로 떨어졌고,
+  // 그러면 매칭에서 지역 필터가 통째로 꺼져 다른 지역 전용 공고까지 추천됐다.
   mapRegion(address: string): BizRegionType | '전체' {
     if (!address) return '전체';
-    const normalizedAddr = address.trim();
-    const firstWord = normalizedAddr.split(' ')[0];
+
+    const head = address
+      .replace(/\([^)]*\)/g, ' ')   // "(13559 )", "(정자동, 대림아크로텔)" 등 괄호 구간 제거
+      .replace(/^[^가-힣]+/, '')     // 남은 우편번호·기호 등 한글 앞 잡음 제거
+      .trim()
+      .slice(0, 15);                // 시·도는 주소 맨 앞 — 뒤쪽 도로명·건물명 오인 방지
+
+    // 정식 도명(경상북도 등)은 별칭 표로, 나머지는 지역코드 그대로 검사한다.
+    const tokens: Array<[string, BizRegionType]> = [];
+    for (const [alias, code] of Object.entries(REGION_ALIASES)) tokens.push([alias, code as BizRegionType]);
     for (const region of BizRegions) {
-       if (region === '전국') continue;
-       if (firstWord.includes(region) || (region.length === 2 && firstWord.substring(0, 2) === region)) {
-         return region;
-       }
+      if (region !== '전국') tokens.push([region, region]);
     }
-    return '전체';
+
+    // 여러 지역명이 걸리면 주소에서 가장 앞에 나온 것(= 시·도)을 택한다.
+    let bestAt = -1;
+    let best: BizRegionType | '전체' = '전체';
+    for (const [token, region] of tokens) {
+      const at = head.indexOf(token);
+      if (at >= 0 && (bestAt < 0 || at < bestAt)) {
+        bestAt = at;
+        best = region;
+      }
+    }
+    return best;
   },
 
   mapIndustry(rawIndustry: string): BizCategory {

@@ -83,13 +83,20 @@ const REGION_CODES = ['서울','부산','대구','인천','광주','대전','울
 /** 축약 코드가 원문에 그대로 안 나오는 표기 보정 (충청북도→충북 등) */
 const REGION_ALIASES = { '충청북': '충북', '충청남': '충남', '전라북': '전북', '전라남': '전남', '경상북': '경북', '경상남': '경남' };
 
-/** 공고의 소관부처·수행기관·해시태그·제목에서 표준 지역코드를 추출 (없으면 전국) */
+// 전국 공고 판정 — 기업마당은 전국 사업의 해시태그에 17개 시도를 전부 나열하므로,
+// 지역명을 그대로 긁으면 전국 사업이 '17개 지역 전용'으로 잡힌다.
+// 실제 분포가 1~6개(정상 다지역) → 13개 이상(전국)으로 끊기므로 13개 이상은 전국으로 접는다.
+// ※ services/matchingService.ts 의 NATIONWIDE_MIN_CODES 와 같은 값을 유지할 것
+const NATIONWIDE_MIN_CODES = 13;
+
+/** 공고의 소관부처·수행기관·해시태그·제목에서 표준 지역코드를 추출 (없거나 전 지역이면 전국) */
 function extractRegionCodes(...texts) {
   const text = texts.filter(Boolean).join(' ');
   const found = new Set();
   for (const code of REGION_CODES) if (text.includes(code)) found.add(code);
   for (const [alias, code] of Object.entries(REGION_ALIASES)) if (text.includes(alias)) found.add(code);
-  return found.size ? [...found] : ['전국'];
+  if (found.size === 0 || found.size >= NATIONWIDE_MIN_CODES) return ['전국'];
+  return [...found];
 }
 
 /**

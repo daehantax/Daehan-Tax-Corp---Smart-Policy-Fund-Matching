@@ -16,13 +16,30 @@ import { BizCategory, BizRegions, Grant, UserSession } from '../types';
 
 // 축약 지역코드가 원문에 그대로 안 나오는 표기 보정 (충청북도→충북 등)
 // ※ scripts/sync-bizinfo.mjs 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
-const REGION_ALIASES: Record<string, string> = {
+// ※ 고객사 주소 → 지역코드 변환(CsvService.mapRegion)도 이 표를 함께 사용한다
+export const REGION_ALIASES: Record<string, string> = {
   '충청북': '충북', '충청남': '충남',
   '전라북': '전북', '전라남': '전남',
   '경상북': '경북', '경상남': '경남',
 };
 
-/** 공고 텍스트에서 표준 지역코드(서울/부산/…/제주)를 추출. 없으면 전국으로 간주 */
+// 전국 공고 판정 기준 — 기업마당은 전국 사업의 해시태그에 17개 시도를 전부 나열한다.
+// (예: "노사문화 우수기업 … #서울#부산#대구#인천#광주#…#경남#제주")
+// 그래서 지역명을 그대로 긁으면 전국 사업이 '17개 지역 전용 공고'로 잡혀
+// 카드 지역 배지가 '전국'이 아니라 "서울·부산·대구"로 표시된다.
+// 실제 데이터 분포는 1~6개(정상 다지역: 대구·경북, 부산·울산·경남 등) 다음이
+// 13개 이상(전국)으로 뚝 끊기므로, 13개 이상이면 전국으로 접는다.
+// ※ scripts/sync-bizinfo.mjs 의 같은 규칙과 함께 수정할 것
+const NATIONWIDE_MIN_CODES = 13;
+
+/** 지역코드 목록 정리 — 비어 있거나 사실상 전 지역이면 '전국' 하나로 접는다 */
+export function normalizeRegionCodes(codes: string[] | undefined): string[] {
+  if (!codes || codes.length === 0) return ['전국'];
+  if (codes.includes('전국')) return ['전국'];
+  return codes.length >= NATIONWIDE_MIN_CODES ? ['전국'] : codes;
+}
+
+/** 공고 텍스트에서 표준 지역코드(서울/부산/…/제주)를 추출. 없거나 전 지역이면 전국으로 간주 */
 export function extractRegionCodes(...texts: (string | undefined)[]): string[] {
   const text = texts.filter(Boolean).join(' ');
   const found = new Set<string>();
@@ -33,12 +50,14 @@ export function extractRegionCodes(...texts: (string | undefined)[]): string[] {
   for (const [alias, code] of Object.entries(REGION_ALIASES)) {
     if (text.includes(alias)) found.add(code);
   }
-  return found.size ? [...found] : ['전국'];
+  return normalizeRegionCodes([...found]);
 }
 
 /** 공고의 지역코드. DB(region_codes)에 있으면 그 값을, 없으면(CSV 폴백 등) 즉석 계산 */
+// DB 값도 normalizeRegionCodes를 거친다 — 동기화 스크립트 수정 전에 저장된
+// '17개 지역' 행이 그대로 남아 있어도 화면에서는 전국으로 보이게 하기 위함.
 export function getGrantRegions(g: Grant): string[] {
-  if (g.regionCodes && g.regionCodes.length > 0) return g.regionCodes;
+  if (g.regionCodes && g.regionCodes.length > 0) return normalizeRegionCodes(g.regionCodes);
   return extractRegionCodes(g.department, g.agency, (g.hashtags || []).join(' '), g.title);
 }
 
