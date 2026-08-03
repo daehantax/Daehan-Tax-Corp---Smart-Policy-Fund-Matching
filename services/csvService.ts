@@ -70,7 +70,7 @@ function mapSupabaseRow(row: any): Grant {
     registrationDate: row.registration_date || '',
     detailUrl: row.detail_url || '#',
     periodText: row.period_text || '',
-    supportAmount: '',
+    supportAmount: row.support_amount || '',
     summary: row.summary || '',
     target: row.target || '',
     subCategory: row.sub_category || '',
@@ -78,8 +78,12 @@ function mapSupabaseRow(row: any): Grant {
     regionCodes: Array.isArray(row.region_codes) && row.region_codes.length > 0
       ? row.region_codes
       : extractRegionCodes(row.department, row.agency, hashtags.join(' '), row.title),
-    // 시·군은 DB 컬럼이 없어 제목·해시태그에서 즉석 계산한다 (스키마 변경 불필요)
-    sigunguCodes: extractSigunguCodes(row.title, hashtags.join(' ')),
+    // 시·군은 동기화 스크립트가 계산해 DB에 넣는다. 아직 채워지지 않은 행(동기화 전)은
+    // 앱에서 즉석 계산 — 규칙은 scripts/sync-bizinfo.mjs 와 동일하다.
+    sigunguCodes: Array.isArray(row.sigungu_codes) && row.sigungu_codes.length > 0
+      ? row.sigungu_codes
+      : extractSigunguCodes(row.title, hashtags.join(' ')),
+    targetFlags: Array.isArray(row.target_flags) ? row.target_flags : [],
     views: Number(row.views) || 0,
     tags: computeSmartTags([row.title, row.category, row.sub_category, row.summary, row.target, hashtags.join(' ')]),
   };

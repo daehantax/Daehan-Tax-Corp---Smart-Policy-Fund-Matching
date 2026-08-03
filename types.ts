@@ -14,6 +14,7 @@ export interface Grant {
   hashtags?: string[];  // 기업마당 해시태그 (지역/분야 정밀 매칭용)
   regionCodes?: string[]; // 표준 지역코드 (전국/서울/…/제주) — DB region_codes 컬럼
   sigunguCodes?: string[]; // 시·군·구 (기초자치단체 전용 사업일 때만. 제목·해시태그에서 계산)
+  targetFlags?: string[];  // 자격 조건 태그 (동기화 시 사업개요 원문에서 추출 — DB target_flags 컬럼)
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;
