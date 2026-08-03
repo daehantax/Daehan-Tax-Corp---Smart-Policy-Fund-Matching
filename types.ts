@@ -13,6 +13,7 @@ export interface Grant {
   subCategory?: string; // 지원분야 중분류
   hashtags?: string[];  // 기업마당 해시태그 (지역/분야 정밀 매칭용)
   regionCodes?: string[]; // 표준 지역코드 (전국/서울/…/제주) — DB region_codes 컬럼
+  sigunguCodes?: string[]; // 시·군·구 (기초자치단체 전용 사업일 때만. 제목·해시태그에서 계산)
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;
@@ -28,6 +29,7 @@ export interface UserSession {
   identifier: string; // BRN or Email
   industry?: string;
   region?: string;    // Added for auto-filtering
+  sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display
   ceoName?: string;     // Added for display
 }

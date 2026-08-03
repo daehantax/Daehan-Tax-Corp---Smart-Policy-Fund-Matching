@@ -50,7 +50,8 @@ export const MockDbService = {
           companyName: data.companyName || '',
           ceoName: data.ceoName || '',
           industry: CsvService.mapIndustry(data.bizCategory || ''),
-          region: CsvService.mapRegion(data.regionHint || '')
+          region: CsvService.mapRegion(data.regionHint || ''),
+          sigungu: CsvService.mapSigungu(data.regionHint || '')
         };
       } catch (error) {
         // 함수 미배포·일시 장애 시에만 기존 Apps Script 경로로 폴백
@@ -70,7 +71,8 @@ export const MockDbService = {
           companyName: '테스트용 샘플기업',
           ceoName: '김테스트',
           industry: CsvService.mapIndustry('서비스업'),
-          region: CsvService.mapRegion('서울특별시 강남구')
+          region: CsvService.mapRegion('서울특별시 강남구'),
+          sigungu: CsvService.mapSigungu('서울특별시 강남구')
         };
       }
       return null;
@@ -96,7 +98,8 @@ export const MockDbService = {
         companyName: result.companyName || '',
         ceoName: result.ceoName || '',
         industry: CsvService.mapIndustry(result.bizCategory || ''),
-        region: CsvService.mapRegion(result.regionHint || '')
+        region: CsvService.mapRegion(result.regionHint || ''),
+        sigungu: CsvService.mapSigungu(result.regionHint || '')
       };
     } catch (error) {
       console.error('[Verify] 사업자번호 확인 중 오류:', error);

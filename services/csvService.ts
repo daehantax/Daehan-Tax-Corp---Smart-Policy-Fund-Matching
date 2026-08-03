@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import { BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_GRANTS } from '../constants';
 import { supabase } from './supabaseClient';
-import { extractRegionCodes, REGION_ALIASES } from './matchingService';
+import { extractRegionCodes, extractSigunguCodes, isSigungu, REGION_ALIASES } from './matchingService';
 
 // ==============================================================================
 // 정책자금(공고) 데이터 소스 설정
@@ -78,6 +78,8 @@ function mapSupabaseRow(row: any): Grant {
     regionCodes: Array.isArray(row.region_codes) && row.region_codes.length > 0
       ? row.region_codes
       : extractRegionCodes(row.department, row.agency, hashtags.join(' '), row.title),
+    // 시·군은 DB 컬럼이 없어 제목·해시태그에서 즉석 계산한다 (스키마 변경 불필요)
+    sigunguCodes: extractSigunguCodes(row.title, hashtags.join(' ')),
     views: Number(row.views) || 0,
     tags: computeSmartTags([row.title, row.category, row.sub_category, row.summary, row.target, hashtags.join(' ')]),
   };
@@ -210,6 +212,7 @@ export const CsvService = {
                  subCategory: subCategory,
                  hashtags: hashtags,
                  regionCodes: extractRegionCodes(department, agency, hashtags.join(' '), title),
+                 sigunguCodes: extractSigunguCodes(title, hashtags.join(' ')),
                  views: Number(row['조회수']) || 0,
                  tags: tags
                };
@@ -257,6 +260,22 @@ export const CsvService = {
       }
     }
     return best;
+  },
+
+  // 고객사 주소 → 시·군·구 목록 (예: "경기도 성남시 분당구 …" → ['성남시','분당구']).
+  // 관내 기업 전용 사업 판정에 쓴다. 판별 못 하면 빈 배열 — 그 경우 시·군 축은 적용되지 않는다.
+  mapSigungu(address: string): string[] {
+    if (!address) return [];
+    const head = address
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/^[^가-힣]+/, '')
+      .trim();
+    const out: string[] = [];
+    // 시·도 다음의 2~3개 토큰 안에 시·군·구가 온다 (예: 경기도 / 성남시 / 분당구)
+    for (const token of head.split(/\s+/).slice(0, 4)) {
+      if (isSigungu(token) && !out.includes(token)) out.push(token);
+    }
+    return out;
   },
 
   mapIndustry(rawIndustry: string): BizCategory {

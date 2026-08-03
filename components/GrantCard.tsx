@@ -1,7 +1,7 @@
 import React from 'react';
 import { Grant, BizCategory } from '../types';
 import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2 } from 'lucide-react';
-import { getGrantRegions } from '../services/matchingService';
+import { getGrantRegions, getGrantSigungu } from '../services/matchingService';
 
 interface GrantCardProps {
   grant: Grant;
@@ -28,9 +28,14 @@ export const GrantCard: React.FC<GrantCardProps> = ({
     }
   };
 
-  // 지역 표시: 전국이면 '전국', 아니면 해당 지역 나열 (최대 3개)
+  // 지역 표시: 전국이면 '전국', 아니면 해당 지역 나열 (최대 3개).
+  // 시·군 전용 사업이면 "경기 화성시"처럼 시·군까지 붙여 관내 사업임을 드러낸다.
   const regions = getGrantRegions(grant);
+  const sigungu = getGrantSigungu(grant);
   const regionLabel = regions.includes('전국') ? '전국' : regions.slice(0, 3).join('·');
+  const placeLabel = sigungu.length > 0
+    ? `${regionLabel} ${sigungu.slice(0, 2).join('·')}`
+    : regionLabel;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all duration-300 hover:-translate-y-1 overflow-hidden flex flex-col h-full group relative">
@@ -42,7 +47,7 @@ export const GrantCard: React.FC<GrantCardProps> = ({
               {grant.category}
             </span>
             <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-[11px] font-bold bg-sky-50 text-sky-700">
-              <MapPin size={11} /> {regionLabel}
+              <MapPin size={11} /> {placeLabel}
             </span>
           </div>
 

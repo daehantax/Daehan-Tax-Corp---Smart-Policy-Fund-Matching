@@ -209,7 +209,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
             <div className="hidden md:flex flex-col text-right">
               <span className="text-sm font-bold text-slate-700">{session.companyName || session.identifier} 대표님</span>
               <span className="text-xs text-slate-400">
-                {session.region && <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 mr-1">{session.region}</span>}
+                {session.region && (
+                  <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 mr-1">
+                    {session.region}{session.sigungu?.[0] ? ` ${session.sigungu[0]}` : ''}
+                  </span>
+                )}
                 {session.industry && <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600">{session.industry}</span>}
               </span>
             </div>
@@ -294,7 +298,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                   </h2>
                 </div>
                 <p className="text-blue-200 text-sm leading-relaxed">
-                  대한세무법인에 등록된 회사 정보(<span className="font-bold text-white">{session.region || '전국'} · {session.industry || '전체 업종'}</span>)와
+                  대한세무법인에 등록된 회사 정보(<span className="font-bold text-white">{session.region || '전국'}{session.sigungu?.[0] ? ` ${session.sigungu[0]}` : ''} · {session.industry || '전체 업종'}</span>)와
                   관심 키워드를 바탕으로 <span className="font-bold text-white">자동 매칭</span>한 결과입니다.
                 </p>
               </div>
