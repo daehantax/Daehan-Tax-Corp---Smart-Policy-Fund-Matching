@@ -178,15 +178,34 @@ function extractTargetFlags(title, target, summaryFull) {
 // 다만 "매출 10억원 이상 기업" 같은 자격 조건 금액을 지원금액으로 잘못 표시하면
 // 사장님이 오해하므로, 지원을 뜻하는 말 뒤에 붙은 금액만 인정한다.
 // 애매하면 비워 둔다 — 틀린 금액을 보여주는 것보다 안 보여주는 게 낫다.
-const AMOUNT_CUE = '(?:최대|한도|이내|지원금|지원 금액|지원금액|융자|보조금|바우처|업체당|기업당|기업 당|인당|1인당|사업화자금)';
+// 금액 하나를 "지원금액"으로 인정하는 조건 — 앞뒤 어느 한쪽에 단서가 있어야 한다.
+//   · 앞 단서: "업체당 5억원", "최대 300만원", "사업화자금 2,000만원"
+//   · 뒤 단서: "3억원 이내", "5천만원 한도"  ← 한도 표현은 금액 뒤에 온다
+//   · 자격 기준 배제: "연매출 20억원 미만", "매출액 3,000억원 이상인 기업 제외"
+// 앞 단서만 쓰면 "소상공인 5천만원 이내 융자"를 놓치고(미탐),
+// '이내'를 앞 단서로 넣으면 "업력 10년 이내)스타트업 - 연매출 20억원"을 잡는다(오탐).
+// 그래서 양쪽을 따로 본다. 어느 단서도 없으면 비워 둔다 — 틀린 금액보다 빈 값이 낫다.
+const AMOUNT_PREFIX = '(?:최대|한도|지원금|지원 금액|지원금액|융자|보조금|바우처|업체당|업체 당|업소당|업소 당|업체별|기업당|기업 당|기업별|인당|1인당|사업화자금)';
 const AMOUNT_NUM = '[\\d,]+(?:\\.\\d+)?\\s*(?:억|천만|백만|만)\\s*원';
-const AMOUNT_RE = new RegExp(`${AMOUNT_CUE}[^.。\\n]{0,20}?(${AMOUNT_NUM}(?:\\s*(?:~|∼|-|부터)\\s*${AMOUNT_NUM})?)`, 'g');
+const AMOUNT_SCAN = new RegExp(`${AMOUNT_NUM}(?:\\s*(?:~|∼|～|-|부터)\\s*${AMOUNT_NUM})?`, 'g');
+// '이하'는 뒤 단서에서 제외한다 — "연매출액 3억원 이하 사업자"처럼 자격 기준에 훨씬 자주 쓰인다.
+// 지원 한도는 실제 데이터에서 '이내'·'한도'가 압도적이다.
+const AMOUNT_SUFFIX_CUE = /^\s*(?:이내|한도|까지|지원|융자|보조)/;
+const CONDITION_SUFFIX = /^\s*(?:미만|이상|초과|이하)/;
+// 금액 앞이 매출·자본금이면 지원금액이 아니라 자격 기준이다 ("2025년 매출액 4억원 이하")
+const CONDITION_PREFIX = /(?:매출|매출액|연매출|평균매출|자본금|자산|부채)[^☞.。\n]{0,15}$/;
+const AMOUNT_PREFIX_RE = new RegExp(`${AMOUNT_PREFIX}[^.。\\n]{0,20}$`);
 
 function extractSupportAmount(summaryFull) {
   const text = String(summaryFull || '');
   const hits = [];
-  for (const m of text.matchAll(AMOUNT_RE)) {
-    const v = m[1].replace(/\s+/g, ' ').trim();
+  for (const m of text.matchAll(AMOUNT_SCAN)) {
+    const after = text.slice(m.index + m[0].length);
+    if (CONDITION_SUFFIX.test(after)) continue;                   // 자격 기준 금액
+    const before = text.slice(Math.max(0, m.index - 30), m.index);
+    if (CONDITION_PREFIX.test(before)) continue;                  // 자격 기준 금액
+    if (!AMOUNT_SUFFIX_CUE.test(after) && !AMOUNT_PREFIX_RE.test(before)) continue;
+    const v = m[0].replace(/\s+/g, ' ').trim();
     if (!hits.includes(v)) hits.push(v);
   }
   if (hits.length === 0) return null;
