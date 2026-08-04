@@ -2,6 +2,7 @@ import React from 'react';
 import { Grant, BizCategory } from '../types';
 import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2 } from 'lucide-react';
 import { getGrantRegions, getGrantSigungu } from '../services/matchingService';
+import { EXCLUSIVE_ZONES } from '../services/geo';
 
 interface GrantCardProps {
   grant: Grant;
@@ -32,7 +33,10 @@ export const GrantCard: React.FC<GrantCardProps> = ({
   // 시·군 전용 사업이면 "경기 화성시"처럼 시·군까지 붙여 관내 사업임을 드러낸다.
   const regions = getGrantRegions(grant);
   const sigungu = getGrantSigungu(grant);
-  const regionLabel = regions.includes('전국') ? '전국' : regions.slice(0, 3).join('·');
+  const zone = regions.find(r => EXCLUSIVE_ZONES[r]);   // '비수도권' 등
+  const regionLabel = zone ? zone
+    : regions.includes('전국') ? '전국'
+    : regions.slice(0, 3).join('·');
   const placeLabel = sigungu.length > 0
     ? `${regionLabel} ${sigungu.slice(0, 2).join('·')}`
     : regionLabel;

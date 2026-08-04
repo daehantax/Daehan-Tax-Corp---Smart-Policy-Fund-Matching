@@ -80,8 +80,78 @@ function csvField(v) {
 
 /** 앱 화면의 지역 필터와 동일한 표준 지역코드 17개 */
 const REGION_CODES = ['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
-/** 축약 코드가 원문에 그대로 안 나오는 표기 보정 (충청북도→충북 등) */
-const REGION_ALIASES = { '충청북': '충북', '충청남': '충남', '전라북': '전북', '전라남': '전남', '경상북': '경북', '경상남': '경남' };
+
+// 행정구역 사전 (data/administrative-divisions.json) — 앱의 services/geo.ts 와 같은 파일을 읽는다.
+// main() 에서 로드한다.
+let SIDO_TOKENS = [];      // [{ token, codes }] — 긴 토큰 우선
+let ZONES = {};            // { 권역명: { include? , exclude? } }
+let SIGUNGU_BY_NAME = new Map();
+let SIGUNGU_BY_SHORT = new Map();
+
+function loadDivisions(divisions) {
+  const sido = divisions.sido;
+  SIDO_TOKENS = [
+    ...sido.map(s => ({ token: s.name, codes: s.appCodes })),
+    ...sido.map(s => ({ token: s.short, codes: s.appCodes })),
+    ...Object.entries(divisions.legacyAliases).map(([token, codes]) => ({ token, codes })),
+    ...REGION_CODES.map(c => ({ token: c, codes: [c] })),
+  ].sort((a, b) => b.token.length - a.token.length);
+  ZONES = divisions.zones;
+
+  const sidoWords = new Set([...sido.map(s => s.short), ...REGION_CODES]);
+  for (const s of divisions.sigungu) {
+    if (!SIGUNGU_BY_NAME.has(s.name)) SIGUNGU_BY_NAME.set(s.name, []);
+    SIGUNGU_BY_NAME.get(s.name).push(s);
+    if (s.short && !sidoWords.has(s.short)) {
+      if (!SIGUNGU_BY_SHORT.has(s.short)) SIGUNGU_BY_SHORT.set(s.short, []);
+      SIGUNGU_BY_SHORT.get(s.short).push(s);
+    }
+  }
+  const sidoOf = new Map(sido.map(s => [s.short, s.appCodes]));
+  return { sidoOf };
+}
+let SIDO_OF = new Map();
+
+function sigunguSidoCodes(name) {
+  const out = new Set();
+  for (const e of SIGUNGU_BY_NAME.get(name) || []) for (const c of SIDO_OF.get(e.sido) || []) out.add(c);
+  return [...out];
+}
+function sigunguBelongsTo(name, regionCodes) {
+  if (regionCodes.length === 0) return true;
+  const codes = sigunguSidoCodes(name);
+  return codes.length === 0 || codes.some(c => regionCodes.includes(c));
+}
+function expandSigunguShort(token, regionCodes) {
+  const entries = SIGUNGU_BY_SHORT.get(token);
+  if (!entries || entries.length === 0) return null;
+  // 폐지 항목과 겹칠 때는 현행을 택한다 ('화성' → 화성시(현행) vs 화성군(폐지))
+  const prefer = (list) => { const cur = list.filter(e => !e.retired); return cur.length > 0 ? cur : list; };
+  if (regionCodes.length > 0) {
+    const inRegion = prefer(entries.filter(e => (SIDO_OF.get(e.sido) || []).some(c => regionCodes.includes(c))));
+    if (inRegion.length === 1) return inRegion[0].name;
+    if (inRegion.length > 1) return null;
+  }
+  const pool = prefer(entries);
+  const names = new Set(pool.map(e => e.name));
+  return names.size === 1 ? pool[0].name : null;
+}
+function pickSidoCodes(text) {
+  if (!text) return [];
+  const found = new Set();
+  for (const { token, codes } of SIDO_TOKENS) if (text.includes(token)) for (const c of codes) found.add(c);
+  return [...found];
+}
+function detectZone(text) {
+  if (!text) return null;
+  for (const name of Object.keys(ZONES).sort((a, b) => b.length - a.length)) {
+    if (!text.includes(name)) continue;
+    const z = ZONES[name];
+    if (z.exclude) return [name];      // '비수도권' — 이름 그대로 저장하고 앱이 제외 규칙으로 해석
+    if (z.include) return [...z.include];
+  }
+  return null;
+}
 
 // 전국 공고 판정 — 기업마당은 전국 사업의 해시태그에 17개 시도를 전부 나열하므로,
 // 지역명을 그대로 긁으면 전국 사업이 '17개 지역 전용'으로 잡힌다.
@@ -89,64 +159,62 @@ const REGION_ALIASES = { '충청북': '충북', '충청남': '충남', '전라�
 // ※ services/matchingService.ts 의 NATIONWIDE_MIN_CODES 와 같은 값을 유지할 것
 const NATIONWIDE_MIN_CODES = 13;
 
-/** 텍스트에서 표준 지역코드를 긁어낸다 (전국 판정은 하지 않음) */
-function pickRegionCodes(text) {
-  const found = new Set();
-  for (const code of REGION_CODES) if (text.includes(code)) found.add(code);
-  for (const [alias, code] of Object.entries(REGION_ALIASES)) if (text.includes(alias)) found.add(code);
-  return [...found];
-}
-
 /**
- * 공고의 표준 지역코드 판정.
- *
- * 해시태그는 지역 전용 사업에도 17개 시도를 전부 달아놓는 경우가 있어 그때는 믿을 수 없다.
- *   예) "강원 영동권 관광 가치이음 지원사업" — 강원 8개 시·군 전용인데 해시태그에 16개
- *       시도가 나열돼 '전국'으로 잡혔다.
- * ① 해시태그 포함 지역이 1~12개면 그대로 믿고,
- * ② 13개 이상(신뢰 불가)이면 제목·소관부처·수행기관으로 다시 판정한다.
- * ①을 먼저 보는 이유: 기관명을 항상 우선하면 "[대전ㆍ충청]" 같은 권역 사업이 한 지역으로
- * 좁혀져 인접 지역 고객사가 자격 있는 공고를 못 본다.
+ * 공고의 표준 지역코드 판정. 판정 순서가 신호의 신뢰도 순서다.
+ *  ① 제목·기관·해시태그의 시도가 1~12개 → 그대로 믿는다
+ *  ② 제목의 권역 표현 → 펼친다 ("[호남권]" → 광주·전남·전북, "[비수도권]" → 수도권 제외)
+ *  ③ 해시태그가 전 지역 나열(13개 이상)이면 제목·기관만으로 다시 판정
+ *     ("강원 영동권 관광 가치이음" 해시태그 16개 시도 → 강원특별자치도경제진흥원 → 강원)
+ *  ④ 본문의 권역 표현 (제목·기관에 단서가 전혀 없을 때만)
+ *  ⑤ 전국
  * ※ services/matchingService.ts 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
  */
-function extractRegionCodes(department, agency, hashtagsText, title) {
-  const all = pickRegionCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
+function extractRegionCodes(department, agency, hashtagsText, title, bodyText) {
+  const all = pickSidoCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
   if (all.length > 0 && all.length < NATIONWIDE_MIN_CODES) return all;
 
-  const trusted = pickRegionCodes([department, agency, title].filter(Boolean).join(' '));
+  const titleZone = detectZone(title || '');
+  if (titleZone) return titleZone;
+
+  const trusted = pickSidoCodes([department, agency, title].filter(Boolean).join(' '));
   if (trusted.length > 0 && trusted.length < NATIONWIDE_MIN_CODES) return trusted;
+
+  const bodyZone = detectZone(bodyText || '');
+  if (bodyZone) return bodyZone;
 
   return ['전국'];
 }
 
 // --- 시·군·구 추출 -----------------------------------------------------------
 // ※ services/matchingService.ts 의 extractSigunguCodes 와 같은 규칙 — 함께 수정할 것.
-//   사전은 data/sigungu-names.json 을 앱과 공유한다 (복사본을 두지 않는다).
-let SIGUNGU_SET = new Set();
 
 const TITLE_SIGUNGU = /^\[[^\]]*\]\s*([가-힣]{1,4}(?:시|군|구)(?:\s*[ㆍ·,\/]\s*[가-힣]{1,4}(?:시|군|구))*)(?=[\s0-9([]|$)/;
 const TAG_SIGUNGU_MAX = 2;   // 태그에 시·군이 3개 이상 나열되면 광역 사업으로 보고 무시
 
-/** 공고의 시·군·구. 관내 기업만 신청 가능한 기초자치단체 사업이 아니면 빈 배열 */
-function extractSigunguCodes(title, hashtagsText) {
+/**
+ * 공고의 시·군·구. 관내 기업만 신청 가능한 기초자치단체 사업이 아니면 빈 배열.
+ * regionCodes 로 동명 시·군·구를 교차 검증한다 (중구=서울·부산·대구·대전·울산).
+ */
+function extractSigunguCodes(title, hashtagsText, regionCodes = []) {
   const found = new Set();
+  const accept = (name) => {
+    if (SIGUNGU_BY_NAME.has(name) && sigunguBelongsTo(name, regionCodes)) found.add(name);
+  };
 
   const m = String(title || '').match(TITLE_SIGUNGU);
-  if (m) {
-    for (const raw of m[1].split(/[ㆍ·,\/]/)) {
-      const tok = raw.trim();
-      if (SIGUNGU_SET.has(tok)) found.add(tok);
-    }
-  }
+  if (m) for (const raw of m[1].split(/[ㆍ·,\/]/)) accept(raw.trim());
 
-  // 해시태그에만 시·군이 있는 공고 보강. 2글자 자치구(중구/서구 등)는 무관한 태그와
-  // 겹치기 쉬워('강소특구'→'서구') 태그 경로에서는 인정하지 않는다.
-  const fromTags = String(hashtagsText || '')
-    .split(/[,#\/\s]+/)
-    .map(t => t.trim())
-    .filter(t => t && SIGUNGU_SET.has(t));
+  // 해시태그에만 시·군이 있는 공고 보강. 접미사 없는 표기('강릉'→강릉시)도 인정하되
+  // 2글자 자치구(중구/서구 등)는 무관한 태그와 겹치기 쉬워('강소특구'→'서구') 제외한다.
+  const tokens = String(hashtagsText || '').split(/[,#\/\s]+/).map(t => t.trim()).filter(Boolean);
+  const fromTags = [];
+  for (const tok of tokens) {
+    if (SIGUNGU_BY_NAME.has(tok)) { fromTags.push(tok); continue; }
+    const full = expandSigunguShort(tok, regionCodes);
+    if (full) fromTags.push(full);
+  }
   if (new Set(fromTags).size <= TAG_SIGUNGU_MAX) {
-    for (const tok of fromTags) if (tok.length > 2) found.add(tok);
+    for (const tok of fromTags) if (tok.length > 2) accept(tok);
   }
 
   return [...found];
@@ -367,10 +435,10 @@ async function main() {
   // 첫 항목의 실제 필드명을 로그로 남겨 스펙 검증에 활용
   console.log(`[sync-bizinfo] 수신 ${items.length}건. 첫 항목 필드:`, Object.keys(items[0]).join(', '));
 
-  // 시·군·구 사전 로드 (앱과 같은 파일을 읽는다 — 복사본을 두면 반드시 어긋난다)
-  const sigunguNames = JSON.parse(await readFile(path.join(ROOT, 'data/sigungu-names.json'), 'utf8'));
-  SIGUNGU_SET = new Set(sigunguNames);
-  console.log(`[sync-bizinfo] 시·군·구 사전 ${SIGUNGU_SET.size}종 로드`);
+  // 행정구역 사전 로드 (앱의 services/geo.ts 와 같은 파일 — 복사본을 두면 반드시 어긋난다)
+  const divisions = JSON.parse(await readFile(path.join(ROOT, 'data/administrative-divisions.json'), 'utf8'));
+  ({ sidoOf: SIDO_OF } = loadDivisions(divisions));
+  console.log(`[sync-bizinfo] 행정구역 사전 로드: 시도 ${divisions.sido.length} / 시군구 ${divisions.sigungu.length} / 권역 ${Object.keys(divisions.zones).length}`);
 
   const today = new Date().toISOString().slice(0, 10);
   const seen = new Set();
@@ -430,6 +498,7 @@ async function main() {
     const hashtags = hashtagsText.split(/[,#/\s]+/).map(t => t.trim()).filter(Boolean);
     const supportAmount = extractSupportAmount(summaryFull);
     if (supportAmount) amountFound++;
+    const regionCodes = extractRegionCodes(department, agency, hashtagsText, title, summaryFull);
 
     grantRecords.push({
       pblanc_id: id,
@@ -447,8 +516,8 @@ async function main() {
       summary: summary || null,
       summary_full: summaryFull || null,  // 자격 판정 근거 (앱은 조회하지 않음)
       hashtags,
-      region_codes: extractRegionCodes(department, agency, hashtagsText, title),
-      sigungu_codes: extractSigunguCodes(title, hashtagsText),
+      region_codes: regionCodes,
+      sigungu_codes: extractSigunguCodes(title, hashtagsText, regionCodes),
       target_flags: extractTargetFlags(title, target, summaryFull),
       support_amount: supportAmount,
       views: Number(views) || 0,

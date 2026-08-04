@@ -1,5 +1,12 @@
-import { BizCategory, BizRegions, Grant, UserSession } from '../types';
-import { SIGUNGU_NAMES } from '../constants';
+import { BizCategory, Grant, UserSession } from '../types';
+import {
+  detectZone,
+  EXCLUSIVE_ZONES,
+  expandSigunguShort,
+  isSigungu,
+  pickSidoCodes,
+  sigunguBelongsTo,
+} from './geo';
 
 // ==============================================================================
 // 매칭 서비스 — 수파베이스 policy_grants 데이터 기반 공고 매칭
@@ -16,14 +23,7 @@ import { SIGUNGU_NAMES } from '../constants';
 // clients 테이블(업태 biz_type, 주소 address)에서 변환해 내려준 값을 사용합니다.
 // ==============================================================================
 
-// 축약 지역코드가 원문에 그대로 안 나오는 표기 보정 (충청북도→충북 등)
-// ※ scripts/sync-bizinfo.mjs 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
-// ※ 고객사 주소 → 지역코드 변환(CsvService.mapRegion)도 이 표를 함께 사용한다
-export const REGION_ALIASES: Record<string, string> = {
-  '충청북': '충북', '충청남': '충남',
-  '전라북': '전북', '전라남': '전남',
-  '경상북': '경북', '경상남': '경남',
-};
+// 행정구역 사전·판정은 services/geo.ts 로 통합했다 (data/administrative-divisions.json).
 
 // 전국 공고 판정 기준 — 기업마당은 전국 사업의 해시태그에 17개 시도를 전부 나열한다.
 // (예: "노사문화 우수기업 … #서울#부산#대구#인천#광주#…#경남#제주")
@@ -41,31 +41,22 @@ export function normalizeRegionCodes(codes: string[] | undefined): string[] {
   return codes.length >= NATIONWIDE_MIN_CODES ? ['전국'] : codes;
 }
 
-/** 텍스트에서 표준 지역코드를 긁어낸다 (내부용 — 전국 판정은 하지 않음) */
-function pickRegionCodes(text: string): string[] {
-  const found = new Set<string>();
-  for (const code of BizRegions) {
-    if (code === '전국') continue;
-    if (text.includes(code)) found.add(code);
-  }
-  for (const [alias, code] of Object.entries(REGION_ALIASES)) {
-    if (text.includes(alias)) found.add(code);
-  }
-  return [...found];
-}
-
 /**
- * 공고의 표준 지역코드를 판정한다.
+ * 공고의 표준 지역코드를 판정한다. 판정 순서가 곧 신호의 신뢰도 순서다.
  *
- * 해시태그는 지역 전용 사업에도 17개 시도를 전부 달아놓는 경우가 있어 그때는 믿을 수 없다.
- *   예) "2026년 2차 강원 영동권 관광 가치이음 지원사업" — 강원 8개 시·군 전용인데
- *       해시태그에 16개 시도가 나열되어 있어 '전국'으로 잡혔고, 성남시 고객사 추천에 떴다.
- * 그래서 ① 해시태그를 포함한 지역이 1~12개면 그대로 믿고,
- *        ② 전 지역이 나열돼(13개 이상) 신뢰할 수 없으면 제목·소관부처·수행기관으로 다시 판정한다.
- *        (강원특별자치도경제진흥원 → 강원)
+ *  ① 제목·기관·해시태그에서 시도가 1~12개 → 그대로 믿는다
+ *     (구체적인 시도 표기가 권역 표현보다 정확하다. "[경기] 수원시ㆍ용인시ㆍ화성시 …
+ *      청년일자리도약장려금(수도권형)" 은 '수도권'이 아니라 경기다)
+ *  ② 제목의 권역 표현 → 지역코드로 펼친다
+ *     "[호남권] …" → 광주·전남·전북 / "[비수도권] …" → 수도권 제외
+ *  ③ 해시태그가 전 지역을 나열해(13개 이상) 신뢰할 수 없으면 제목·기관만으로 다시 판정
+ *     "강원 영동권 관광 가치이음"(해시태그 16개 시도) → 강원특별자치도경제진흥원 → 강원
+ *  ④ 본문의 권역 표현 (제목·기관에 아무 단서가 없을 때만)
+ *  ⑤ 전국
  *
- * ①을 먼저 보는 이유: 기관명을 항상 우선하면 "[대전ㆍ충청]", "[충청권]" 같은 권역 사업이
- * 한 지역으로 좁혀져 인접 지역 고객사가 자격 있는 공고를 못 보게 된다(오탐).
+ * ①을 ②보다 먼저 보는 이유와 ③을 ①보다 뒤에 두는 이유는 같다 — 기관명이나 권역을
+ * 앞세우면 "[대전ㆍ충청]" 같은 권역 사업이 한 지역으로 좁혀져 인접 지역 고객사가
+ * 자격 있는 공고를 못 본다(오탐).
  * ※ scripts/sync-bizinfo.mjs 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
  */
 export function extractRegionCodes(
@@ -73,12 +64,19 @@ export function extractRegionCodes(
   agency?: string,
   hashtagsText?: string,
   title?: string,
+  bodyText?: string,
 ): string[] {
-  const all = pickRegionCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
+  const all = pickSidoCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
   if (all.length > 0 && all.length < NATIONWIDE_MIN_CODES) return all;
 
-  const trusted = pickRegionCodes([department, agency, title].filter(Boolean).join(' '));
+  const titleZone = detectZone(title || '');
+  if (titleZone) return titleZone;
+
+  const trusted = pickSidoCodes([department, agency, title].filter(Boolean).join(' '));
   if (trusted.length > 0 && trusted.length < NATIONWIDE_MIN_CODES) return trusted;
+
+  const bodyZone = detectZone(bodyText || '');
+  if (bodyZone) return bodyZone;
 
   return ['전국'];
 }
@@ -96,13 +94,6 @@ export function getGrantRegions(g: Grant): string[] {
 //   예) "[경기] 화성시 2026년 중소기업 노동자 기숙사 임차비 지원사업"
 //       → 사업개요: "화성시 관내 중소기업 노동자의 …  ☞ 관내 소재 중소 제조기업"
 // 같은 경기도라도 성남시 기업은 신청 자격이 없으므로 추천에서 제외해야 한다.
-const SIGUNGU_SET = new Set<string>(SIGUNGU_NAMES);
-
-/** 문자열 하나가 시·군·구 이름인지 (사전에 있는 것만 인정) */
-export function isSigungu(token: string): boolean {
-  return SIGUNGU_SET.has(token);
-}
-
 // 제목 맨 앞 "[경기] 화성시 …" / 복수 병기 "[경남] 창원시ㆍ진주시ㆍ거제시 …" 패턴.
 // 뒤에 공백·숫자·괄호가 와야 인정한다 ("[경기] 광주시니어…" 같은 오탐 방지)
 const TITLE_SIGUNGU = /^\[[^\]]*\]\s*([가-힣]{1,4}(?:시|군|구)(?:\s*[ㆍ·,\/]\s*[가-힣]{1,4}(?:시|군|구))*)(?=[\s0-9([]|$)/;
@@ -116,26 +107,38 @@ const TITLE_SIGUNGU = /^\[[^\]]*\]\s*([가-힣]{1,4}(?:시|군|구)(?:\s*[ㆍ·,
 //     이런 공고는 보통 제목에 "[대구] 중구 …"로 적혀 제목 패턴이 잡아준다.
 const TAG_SIGUNGU_MAX = 2;
 
-/** 공고의 시·군·구를 추출. 시·군 전용 사업이 아니면 빈 배열 */
-export function extractSigunguCodes(title?: string, hashtagsText?: string): string[] {
+/**
+ * 공고의 시·군·구를 추출. 시·군 전용 사업이 아니면 빈 배열.
+ * regionCodes 를 넘기면 동명 시·군·구를 시도로 교차 검증한다
+ * (중구=서울·부산·대구·대전·울산, 고성군=경남·강원).
+ */
+export function extractSigunguCodes(
+  title?: string,
+  hashtagsText?: string,
+  regionCodes: string[] = [],
+): string[] {
   const found = new Set<string>();
+  const accept = (name: string) => {
+    if (isSigungu(name) && sigunguBelongsTo(name, regionCodes)) found.add(name);
+  };
 
   const m = (title || '').match(TITLE_SIGUNGU);
   if (m) {
-    for (const raw of m[1].split(/[ㆍ·,\/]/)) {
-      const tok = raw.trim();
-      if (isSigungu(tok)) found.add(tok);
-    }
+    for (const raw of m[1].split(/[ㆍ·,\/]/)) accept(raw.trim());
   }
 
-  // 해시태그에만 시·군이 있는 공고 보강 (예: 제목엔 없고 태그에 '남양주시')
-  const fromTags = (hashtagsText || '')
-    .split(/[,#\/\s]+/)
-    .map(t => t.trim())
-    .filter(t => t && isSigungu(t));
+  // 해시태그에만 시·군이 있는 공고 보강 (예: 제목엔 없고 태그에 '남양주시').
+  // 접미사 없는 표기('강릉'→강릉시)도 인정하되, 시도명과 겹치는 '제주'·'광주'는 geo에서 배제된다.
+  const tagTokens = (hashtagsText || '').split(/[,#\/\s]+/).map(t => t.trim()).filter(Boolean);
+  const fromTags: string[] = [];
+  for (const tok of tagTokens) {
+    if (isSigungu(tok)) { fromTags.push(tok); continue; }
+    const full = expandSigunguShort(tok, regionCodes);
+    if (full) fromTags.push(full);
+  }
   if (new Set(fromTags).size <= TAG_SIGUNGU_MAX) {
     for (const tok of fromTags) {
-      if (tok.length > 2) found.add(tok);  // 2글자 자치구는 태그 경로에서 인정하지 않음
+      if (tok.length > 2) accept(tok);  // 2글자 자치구는 태그 경로에서 인정하지 않음
     }
   }
 
@@ -145,14 +148,31 @@ export function extractSigunguCodes(title?: string, hashtagsText?: string): stri
 /** 공고의 시·군·구. 매핑 시 계산해 둔 값이 있으면 그 값을, 없으면 즉석 계산 */
 export function getGrantSigungu(g: Grant): string[] {
   if (g.sigunguCodes) return g.sigunguCodes;
-  return extractSigunguCodes(g.title, (g.hashtags || []).join(' '));
+  return extractSigunguCodes(g.title, (g.hashtags || []).join(' '), getGrantRegions(g));
+}
+
+/**
+ * 지역코드 하나가 그 공고에 해당하는지.
+ * '비수도권'처럼 "그 지역을 제외한 전국"을 뜻하는 권역을 함께 해석한다.
+ */
+function regionAllows(regions: string[], region: string): boolean {
+  if (regions.includes('전국') || regions.includes(region)) return true;
+  for (const zone of regions) {
+    const excluded = EXCLUSIVE_ZONES[zone];
+    if (excluded && !excluded.includes(region)) return true;
+  }
+  return false;
+}
+
+/** 그 공고가 특정 지역 전용이 아니라 "○○ 제외 전국"인지 (배지·근거 표시용) */
+function exclusiveZoneOf(regions: string[]): string | null {
+  return regions.find(r => EXCLUSIVE_ZONES[r]) ?? null;
 }
 
 /** 지역 필터: 전국 사업이거나, 공고 지역에 선택 지역이 포함되면 통과 */
 export function matchesRegion(g: Grant, region: string): boolean {
   if (region === '전체' || region === '전국') return true;
-  const regions = getGrantRegions(g);
-  return regions.includes('전국') || regions.includes(region);
+  return regionAllows(getGrantRegions(g), region);
 }
 
 /** 분야 필터: 대분류(category)에 더해 중분류(subCategory)까지 확인 */
@@ -178,10 +198,18 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   const userRegion = session.region && session.region !== '전체' ? session.region : null;
 
   // 1) 지역 (가중치 최대 40)
+  const zone = exclusiveZoneOf(regions);   // '비수도권' 등 "○○ 제외 전국"
   if (userRegion) {
     if (regions.includes(userRegion)) {
       score += 40;
       reasons.push(`${userRegion} 지역 사업`);
+    } else if (zone) {
+      if (!regionAllows(regions, userRegion)) {
+        // 예: 비수도권 사업 + 경기 고객사 — 신청 자격이 없다
+        return { score: 0, reasons: [`${zone} 전용`] };
+      }
+      score += 15;
+      reasons.push(`${zone} 사업`);
     } else if (regions.includes('전국')) {
       score += 15;
       reasons.push('전국 사업');
@@ -189,6 +217,9 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
       // 다른 지역 전용 공고 — 우리 회사와 무관하므로 매칭에서 제외
       return { score: 0, reasons: [`${regions.join('·')} 지역 전용`] };
     }
+  } else if (zone) {
+    score += 15;
+    reasons.push(`${zone} 사업`);
   } else if (regions.includes('전국')) {
     score += 15;
     reasons.push('전국 사업');

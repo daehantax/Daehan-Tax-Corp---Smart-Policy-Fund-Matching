@@ -2,7 +2,8 @@ import Papa from 'papaparse';
 import { BizCategory, BizRegionType, BizRegions, Grant } from '../types';
 import { MOCK_GRANTS } from '../constants';
 import { supabase } from './supabaseClient';
-import { extractRegionCodes, extractSigunguCodes, isSigungu, REGION_ALIASES } from './matchingService';
+import { extractRegionCodes, extractSigunguCodes } from './matchingService';
+import { resolveAddress } from './geo';
 
 // ==============================================================================
 // 정책자금(공고) 데이터 소스 설정
@@ -232,54 +233,17 @@ export const CsvService = {
       });
   },
 
-  // 고객사 주소 → 표준 지역코드(서울/부산/…/제주).
-  // 주소는 대부분 "(13559 ) 경기도 성남시 …" 처럼 우편번호가 앞에 붙어 있고,
-  // "경상북도/충청남도" 같은 정식 도명은 축약 코드(경북/충남)가 원문에 없다.
-  // 예전 구현은 첫 단어("(13559")만 봐서 거의 모든 고객사가 '전체'로 떨어졌고,
-  // 그러면 매칭에서 지역 필터가 통째로 꺼져 다른 지역 전용 공고까지 추천됐다.
+  // 고객사 주소 → 표준 지역코드 / 시·군·구.
+  // 판정은 services/geo.ts 로 통합했다 (행정구역 공식 목록 기반).
+  // 주소 형태가 제각각인 실데이터를 다룬다 — 우편번호 접두, 접미사 없는 옛 지번주소,
+  // 시도명과 구가 붙어 있는 표기 등. 자세한 사례는 geo.resolveAddress 주석 참고.
   mapRegion(address: string): BizRegionType | '전체' {
-    if (!address) return '전체';
-
-    const head = address
-      .replace(/\([^)]*\)/g, ' ')   // "(13559 )", "(정자동, 대림아크로텔)" 등 괄호 구간 제거
-      .replace(/^[^가-힣]+/, '')     // 남은 우편번호·기호 등 한글 앞 잡음 제거
-      .trim()
-      .slice(0, 15);                // 시·도는 주소 맨 앞 — 뒤쪽 도로명·건물명 오인 방지
-
-    // 정식 도명(경상북도 등)은 별칭 표로, 나머지는 지역코드 그대로 검사한다.
-    const tokens: Array<[string, BizRegionType]> = [];
-    for (const [alias, code] of Object.entries(REGION_ALIASES)) tokens.push([alias, code as BizRegionType]);
-    for (const region of BizRegions) {
-      if (region !== '전국') tokens.push([region, region]);
-    }
-
-    // 여러 지역명이 걸리면 주소에서 가장 앞에 나온 것(= 시·도)을 택한다.
-    let bestAt = -1;
-    let best: BizRegionType | '전체' = '전체';
-    for (const [token, region] of tokens) {
-      const at = head.indexOf(token);
-      if (at >= 0 && (bestAt < 0 || at < bestAt)) {
-        bestAt = at;
-        best = region;
-      }
-    }
-    return best;
+    return resolveAddress(address).region;
   },
 
-  // 고객사 주소 → 시·군·구 목록 (예: "경기도 성남시 분당구 …" → ['성남시','분당구']).
-  // 관내 기업 전용 사업 판정에 쓴다. 판별 못 하면 빈 배열 — 그 경우 시·군 축은 적용되지 않는다.
+  // 관내 기업 전용 사업 판정용. 판별 못 하면 빈 배열 — 그 경우 시·군 축은 적용되지 않는다.
   mapSigungu(address: string): string[] {
-    if (!address) return [];
-    const head = address
-      .replace(/\([^)]*\)/g, ' ')
-      .replace(/^[^가-힣]+/, '')
-      .trim();
-    const out: string[] = [];
-    // 시·도 다음의 2~3개 토큰 안에 시·군·구가 온다 (예: 경기도 / 성남시 / 분당구)
-    for (const token of head.split(/\s+/).slice(0, 4)) {
-      if (isSigungu(token) && !out.includes(token)) out.push(token);
-    }
-    return out;
+    return resolveAddress(address).sigungu;
   },
 
   mapIndustry(rawIndustry: string): BizCategory {
