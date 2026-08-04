@@ -89,14 +89,34 @@ const REGION_ALIASES = { '충청북': '충북', '충청남': '충남', '전라�
 // ※ services/matchingService.ts 의 NATIONWIDE_MIN_CODES 와 같은 값을 유지할 것
 const NATIONWIDE_MIN_CODES = 13;
 
-/** 공고의 소관부처·수행기관·해시태그·제목에서 표준 지역코드를 추출 (없거나 전 지역이면 전국) */
-function extractRegionCodes(...texts) {
-  const text = texts.filter(Boolean).join(' ');
+/** 텍스트에서 표준 지역코드를 긁어낸다 (전국 판정은 하지 않음) */
+function pickRegionCodes(text) {
   const found = new Set();
   for (const code of REGION_CODES) if (text.includes(code)) found.add(code);
   for (const [alias, code] of Object.entries(REGION_ALIASES)) if (text.includes(alias)) found.add(code);
-  if (found.size === 0 || found.size >= NATIONWIDE_MIN_CODES) return ['전국'];
   return [...found];
+}
+
+/**
+ * 공고의 표준 지역코드 판정.
+ *
+ * 해시태그는 지역 전용 사업에도 17개 시도를 전부 달아놓는 경우가 있어 그때는 믿을 수 없다.
+ *   예) "강원 영동권 관광 가치이음 지원사업" — 강원 8개 시·군 전용인데 해시태그에 16개
+ *       시도가 나열돼 '전국'으로 잡혔다.
+ * ① 해시태그 포함 지역이 1~12개면 그대로 믿고,
+ * ② 13개 이상(신뢰 불가)이면 제목·소관부처·수행기관으로 다시 판정한다.
+ * ①을 먼저 보는 이유: 기관명을 항상 우선하면 "[대전ㆍ충청]" 같은 권역 사업이 한 지역으로
+ * 좁혀져 인접 지역 고객사가 자격 있는 공고를 못 본다.
+ * ※ services/matchingService.ts 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
+ */
+function extractRegionCodes(department, agency, hashtagsText, title) {
+  const all = pickRegionCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
+  if (all.length > 0 && all.length < NATIONWIDE_MIN_CODES) return all;
+
+  const trusted = pickRegionCodes([department, agency, title].filter(Boolean).join(' '));
+  if (trusted.length > 0 && trusted.length < NATIONWIDE_MIN_CODES) return trusted;
+
+  return ['전국'];
 }
 
 // --- 시·군·구 추출 -----------------------------------------------------------

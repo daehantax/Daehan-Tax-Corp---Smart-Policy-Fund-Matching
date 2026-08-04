@@ -41,9 +41,8 @@ export function normalizeRegionCodes(codes: string[] | undefined): string[] {
   return codes.length >= NATIONWIDE_MIN_CODES ? ['전국'] : codes;
 }
 
-/** 공고 텍스트에서 표준 지역코드(서울/부산/…/제주)를 추출. 없거나 전 지역이면 전국으로 간주 */
-export function extractRegionCodes(...texts: (string | undefined)[]): string[] {
-  const text = texts.filter(Boolean).join(' ');
+/** 텍스트에서 표준 지역코드를 긁어낸다 (내부용 — 전국 판정은 하지 않음) */
+function pickRegionCodes(text: string): string[] {
   const found = new Set<string>();
   for (const code of BizRegions) {
     if (code === '전국') continue;
@@ -52,7 +51,36 @@ export function extractRegionCodes(...texts: (string | undefined)[]): string[] {
   for (const [alias, code] of Object.entries(REGION_ALIASES)) {
     if (text.includes(alias)) found.add(code);
   }
-  return normalizeRegionCodes([...found]);
+  return [...found];
+}
+
+/**
+ * 공고의 표준 지역코드를 판정한다.
+ *
+ * 해시태그는 지역 전용 사업에도 17개 시도를 전부 달아놓는 경우가 있어 그때는 믿을 수 없다.
+ *   예) "2026년 2차 강원 영동권 관광 가치이음 지원사업" — 강원 8개 시·군 전용인데
+ *       해시태그에 16개 시도가 나열되어 있어 '전국'으로 잡혔고, 성남시 고객사 추천에 떴다.
+ * 그래서 ① 해시태그를 포함한 지역이 1~12개면 그대로 믿고,
+ *        ② 전 지역이 나열돼(13개 이상) 신뢰할 수 없으면 제목·소관부처·수행기관으로 다시 판정한다.
+ *        (강원특별자치도경제진흥원 → 강원)
+ *
+ * ①을 먼저 보는 이유: 기관명을 항상 우선하면 "[대전ㆍ충청]", "[충청권]" 같은 권역 사업이
+ * 한 지역으로 좁혀져 인접 지역 고객사가 자격 있는 공고를 못 보게 된다(오탐).
+ * ※ scripts/sync-bizinfo.mjs 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
+ */
+export function extractRegionCodes(
+  department?: string,
+  agency?: string,
+  hashtagsText?: string,
+  title?: string,
+): string[] {
+  const all = pickRegionCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
+  if (all.length > 0 && all.length < NATIONWIDE_MIN_CODES) return all;
+
+  const trusted = pickRegionCodes([department, agency, title].filter(Boolean).join(' '));
+  if (trusted.length > 0 && trusted.length < NATIONWIDE_MIN_CODES) return trusted;
+
+  return ['전국'];
 }
 
 /** 공고의 지역코드. DB(region_codes)에 있으면 그 값을, 없으면(CSV 폴백 등) 즉석 계산 */
