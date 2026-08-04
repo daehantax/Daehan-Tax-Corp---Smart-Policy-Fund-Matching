@@ -363,6 +363,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                             onToggleFavorite={toggleFavorite}
                             matchReasons={matchScores.get(grant.id)?.reasons}
                             warnings={matchScores.get(grant.id)?.warnings}
+                            checkPoints={matchScores.get(grant.id)?.checkPoints}
                           />
                         ))}
                       </div>
@@ -400,6 +401,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                       onToggleFavorite={toggleFavorite}
                       matchReasons={matchScores.get(grant.id)?.reasons}
                       warnings={matchScores.get(grant.id)?.warnings}
+                      checkPoints={matchScores.get(grant.id)?.checkPoints}
                     />
                   ))}
                 </div>

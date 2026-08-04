@@ -49,6 +49,7 @@ export const MockDbService = {
           identifier: normalizedInput,
           companyName: data.companyName || '',
           ceoName: data.ceoName || '',
+          clientType: data.clientType || '',
           bizType: data.bizCategory || '',
           bizItem: data.bizItem || '',
           // 대표자 속성은 Edge Function 이 서버에서 계산한 boolean 만 받는다

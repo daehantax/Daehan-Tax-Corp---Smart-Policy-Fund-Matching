@@ -182,9 +182,10 @@ export function matchesCategory(g: Grant, cat: string): boolean {
 }
 
 export interface MatchResult {
-  score: number;       // 0 = 매칭 대상 아님 (다른 지역 전용 등)
-  reasons: string[];   // 카드에 표시할 매칭 근거
-  warnings?: string[]; // 자격이 의심되는 점 (제외하지는 않고 카드에 주의 표시)
+  score: number;        // 0 = 매칭 대상 아님 (다른 지역 전용 등)
+  reasons: string[];    // 카드에 표시할 매칭 근거
+  warnings?: string[];  // 자격이 안 맞아 보이는 점 (제외하지 않고 주의 표시 + 감점)
+  checkPoints?: string[]; // 우리가 판정하지 못한 조건 (감점 없음 — "공고문 확인 필요")
 }
 
 // ── 업종 적합성 ─────────────────────────────────────────────────────────────
@@ -219,12 +220,39 @@ const INDUSTRY_MISMATCH_RULES: Array<{ flag: string; fits: RegExp; warning: stri
   { flag: '산업:관광', fits: /관광|여행|숙박/, warning: '관광산업 대상' },
 ];
 
-// 대표자 속성 조건. 공고에 이 플래그가 있는데 우리 대표자가 아니면 주의 표시.
+// 대표자 속성·사업자 형태 조건. 공고에 이 플래그가 있는데 우리 회사가 아니면 주의 표시.
 // '청년채용'(청년을 채용하는 기업 지원)은 대표 나이와 무관하므로 여기에 넣지 않는다.
+// 값을 모를 때(undefined)는 판단하지 않는다 — 잘못 경고하는 쪽이 더 나쁘다.
 const OWNER_MISMATCH_RULES: Array<{ flag: string; ok: (s: UserSession) => boolean; warning: string }> = [
   { flag: '청년창업', ok: s => s.isYouthOwner !== false, warning: '대표자 청년 조건' },
   { flag: '여성기업', ok: s => s.isFemaleOwner !== false, warning: '여성기업 대상' },
+  // 사업자 형태 — clients.client_type 이 100% 채워져 있어 확실하게 판정된다.
+  // 예: "소상공인(개인사업자) 비즈플러스카드"는 법인 고객사에게 자격이 없다.
+  { flag: '대상:법인', ok: s => !s.clientType || s.clientType === '법인', warning: '법인 대상 사업' },
+  { flag: '대상:개인', ok: s => !s.clientType || s.clientType !== '법인', warning: '개인사업자 대상 사업' },
 ];
+
+// 우리가 판정할 수 없는 자격 조건 → 카드에 "공고문 확인 필요"로 표시한다.
+// 감점하지 않는다 — 자격이 없다는 뜻이 아니라 "우리가 확인하지 못했다"는 뜻이다.
+// 자격 문단 전수 조사 결과 조건은 14종이고, 아래가 DB 데이터가 없어 판정 불가한 것들이다.
+const UNVERIFIABLE_FLAG_LABELS: Record<string, string> = {
+  '조건:근로자수': '상시근로자 수',
+  '업력제한': '업력',
+  '조건:매출액': '매출액',
+  '수출실적': '수출 실적',
+  'KSIC명시': '업종코드',
+  '조건:인증': '인증 보유',
+  '조건:4대보험': '4대보험',
+  '조건:체납': '세금 체납',
+};
+
+/** 공고에 있지만 우리가 판정하지 못한 자격 조건 이름들 */
+export function unverifiableConditions(g: Grant): string[] {
+  const flags = g.targetFlags ?? [];
+  return Object.entries(UNVERIFIABLE_FLAG_LABELS)
+    .filter(([flag]) => flags.includes(flag))
+    .map(([, label]) => label);
+}
 
 const INDUSTRY_MISMATCH_PENALTY = 20;
 
@@ -239,7 +267,7 @@ function normalizeBizText(...parts: (string | undefined)[]): string {
 }
 
 /** 공고가 우리 회사와 안 맞아 보이는 점들 (제외하지 않고 표시만) */
-export function industryWarnings(g: Grant, session: Pick<UserSession, 'bizType' | 'bizItem' | 'isYouthOwner' | 'isFemaleOwner'>): string[] {
+export function industryWarnings(g: Grant, session: Pick<UserSession, 'bizType' | 'bizItem' | 'isYouthOwner' | 'isFemaleOwner' | 'clientType'>): string[] {
   const flags = g.targetFlags ?? [];
   if (flags.length === 0) return [];
   const warnings: string[] = [];
@@ -339,7 +367,13 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   // 6) 기업마당 조회수(인기) 소폭 가산
   if ((g.views || 0) >= 1000) score += 5;
 
-  return { score: Math.max(score, 1), reasons, warnings: warnings.length ? warnings : undefined };
+  const checkPoints = unverifiableConditions(g);
+  return {
+    score: Math.max(score, 1),
+    reasons,
+    warnings: warnings.length ? warnings : undefined,
+    checkPoints: checkPoints.length ? checkPoints : undefined,
+  };
 }
 
 /** 선택한 관심 키워드에 해당하는 공고인가 (화면에서 묶음을 나누는 기준) */

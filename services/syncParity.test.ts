@@ -86,6 +86,8 @@ describe('앱의 판정 규칙이 참조하는 플래그를 동기화 스크립�
     '산업:관광': { title: '관광산업 지원', target: '중소기업', summary: '☞ 관광기업' },
     '청년창업': { title: '청년창업 지원사업', target: '창업벤처', summary: '☞ 만 39세 이하 청년창업기업' },
     '여성기업': { title: '여성기업 육성사업', target: '중소기업', summary: '☞ 여성기업' },
+    '대상:법인': { title: '소상공인(법인사업자) 비즈플러스카드 지원사업', target: '소상공인', summary: '☞ 매출액 기준을 충족하는 법인사업자' },
+    '대상:개인': { title: '소상공인(개인사업자) 비즈플러스카드 지원사업', target: '소상공인', summary: '☞ 매출액 기준을 충족하는 개인사업자' },
   };
 
   it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS])('%s', (flag) => {
@@ -147,6 +149,18 @@ describe('extractTargetFlags — 자격 문단만 보는 플래그', () => {
       '중소기업',
       '☞ 경남 도내 사업장을 운영 중인 소상공인 또는 여성기업 ☞ 입점 지원',
     )).not.toContain('여성기업');
+  });
+
+  it('"개인사업자 또는 법인사업자"처럼 둘 다 허용하면 어느 쪽도 붙지 않는다', () => {
+    const flags = extractTargetFlags('2026년 지원사업', '중소기업', '☞ 개인사업자 또는 법인사업자 ☞ 지원');
+    expect(flags).not.toContain('대상:법인');
+    expect(flags).not.toContain('대상:개인');
+  });
+
+  it('판정 불가 조건은 나열형이어도 표시한다 (조건이 실제로 있으므로)', () => {
+    const flags = extractTargetFlags('2026년 지원사업', '중소기업', '☞ 매출액, 상시근로자 수 기준을 충족하는 기업');
+    expect(flags).toContain('조건:매출액');
+    expect(flags).toContain('조건:근로자수');
   });
 
   it('조건형은 그대로 붙는다', () => {

@@ -9,6 +9,7 @@ import {
   matchesRegion,
   normalizeRegionCodes,
   scoreGrant,
+  unverifiableConditions,
 } from './matchingService';
 
 const grant = (over: Partial<Grant> = {}): Grant => ({
@@ -238,6 +239,43 @@ describe('대표자 속성 조건', () => {
     // 청년 관련 공고 74건 중 36건이 이 유형 — 대표 나이 주의를 붙이면 오탐
     const g = grant({ targetFlags: ['청년채용'] });
     expect(industryWarnings(g, { bizType: '부동산업', isYouthOwner: false })).toEqual([]);
+  });
+});
+
+describe('사업자 형태 조건 — 비즈플러스카드 사례', () => {
+  // 같은 사업이 "소상공인(법인사업자)"·"소상공인(개인사업자)" 두 공고로 따로 올라온다
+  const corpOnly = grant({ targetFlags: ['소상공인', '대상:법인'] });
+  const indivOnly = grant({ targetFlags: ['소상공인', '대상:개인'] });
+
+  it('법인 고객사에게 개인사업자 전용은 주의, 법인 전용은 통과', () => {
+    expect(industryWarnings(indivOnly, { clientType: '법인' })).toEqual(['개인사업자 대상 사업']);
+    expect(industryWarnings(corpOnly, { clientType: '법인' })).toEqual([]);
+  });
+
+  it('개인사업자 고객사에게 법인 전용은 주의', () => {
+    expect(industryWarnings(corpOnly, { clientType: '개인' })).toEqual(['법인 대상 사업']);
+    expect(industryWarnings(indivOnly, { clientType: '개인' })).toEqual([]);
+  });
+
+  it('사업자 형태를 모르면 판단하지 않는다', () => {
+    expect(industryWarnings(corpOnly, {})).toEqual([]);
+    expect(industryWarnings(indivOnly, {})).toEqual([]);
+  });
+});
+
+describe('판정하지 못한 조건은 "확인 필요"로 표시한다', () => {
+  it('감점하지 않고 checkPoints 로만 알린다', () => {
+    const g = grant({ regionCodes: ['경기'], targetFlags: ['조건:근로자수', '조건:매출액', '업력제한'] });
+    expect(unverifiableConditions(g)).toEqual(['상시근로자 수', '업력', '매출액']);
+    const withCond = scoreGrant(g, session(), []);
+    const without = scoreGrant(grant({ regionCodes: ['경기'] }), session(), []);
+    expect(withCond.checkPoints).toEqual(['상시근로자 수', '업력', '매출액']);
+    expect(withCond.score).toBe(without.score);   // 감점 없음
+    expect(withCond.warnings).toBeUndefined();
+  });
+
+  it('판정 가능한 조건은 확인 필요에 넣지 않는다', () => {
+    expect(unverifiableConditions(grant({ targetFlags: ['제조업', '관내전용', '대상:법인'] }))).toEqual([]);
   });
 });
 

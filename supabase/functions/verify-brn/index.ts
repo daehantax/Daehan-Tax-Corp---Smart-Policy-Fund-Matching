@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
     const { data, error } = await admin
       .from('clients')
-      .select('name, biz_type, biz_item, address, customer_type, client_persons(relation_type, persons(name, birth_date, gender))')
+      .select('name, client_type, biz_type, biz_item, address, customer_type, client_persons(relation_type, persons(name, birth_date, gender))')
       .in('biz_reg_no', [digits, hyphenated])
       .limit(5);
 
@@ -89,6 +89,7 @@ Deno.serve(async (req) => {
       found: true,
       companyName: match.name ?? '',
       ceoName: repPerson?.name ?? '',
+      clientType: match.client_type ?? '', // 법인 / 개인 / 비사업자 — 사업자 형태 전용 사업 판정용
       bizCategory: match.biz_type ?? '',   // 업태 (통합 스키마에선 biz_type 컬럼이 업태)
       bizItem: match.biz_item ?? '',       // 종목 — 산업 분야 판정에 함께 쓴다
       regionHint: match.address ?? '',

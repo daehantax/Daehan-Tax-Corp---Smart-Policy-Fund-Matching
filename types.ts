@@ -29,6 +29,7 @@ export interface UserSession {
   type: 'CLIENT' | 'GUEST';
   identifier: string; // BRN or Email
   industry?: string;  // (구) 업태를 지원분야에 매핑한 값 — 매칭에는 쓰지 않는다. 아래 bizType 참고
+  clientType?: string; // 사업자 형태 ('법인' | '개인' | '비사업자') — 사업자 형태 전용 사업 판정용
   bizType?: string;   // 업태 원문 (예: '부동산업', '건 설 업') — 업종 적합성 판정·화면 표시용
   bizItem?: string;   // 종목 원문 (예: '배관 및 냉ㆍ난방 공사업') — 산업 분야 판정에 함께 사용
   // 대표자 속성. Edge Function 이 서버에서 계산해 boolean 만 내려준다 —

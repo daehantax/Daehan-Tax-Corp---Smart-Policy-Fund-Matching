@@ -1,6 +1,6 @@
 import React from 'react';
 import { Grant, BizCategory } from '../types';
-import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2, AlertTriangle, HelpCircle } from 'lucide-react';
 import { getGrantRegions, getGrantSigungu } from '../services/matchingService';
 import { EXCLUSIVE_ZONES } from '../services/geo';
 
@@ -9,7 +9,8 @@ interface GrantCardProps {
   isFavorite: boolean;
   onToggleFavorite: (id: string) => void;
   matchReasons?: string[]; // 고객사 로그인 시 매칭 근거 표시 (맞춤순)
-  warnings?: string[];     // 업종이 안 맞아 보이는 점 (제외하지 않고 주의만 표시)
+  warnings?: string[];     // 업종·대표자가 안 맞아 보이는 점 (제외하지 않고 주의만 표시)
+  checkPoints?: string[];  // 우리가 판정하지 못한 자격 조건 (자격 없음이 아니라 "확인 필요")
 }
 
 export const GrantCard: React.FC<GrantCardProps> = ({
@@ -17,7 +18,8 @@ export const GrantCard: React.FC<GrantCardProps> = ({
   isFavorite,
   onToggleFavorite,
   matchReasons,
-  warnings
+  warnings,
+  checkPoints
 }) => {
   // Helper for category badge color
   const getCategoryColor = (cat: string) => {
@@ -88,6 +90,14 @@ export const GrantCard: React.FC<GrantCardProps> = ({
               </span>
             ))}
           </div>
+        )}
+
+        {/* 우리가 판정하지 못한 조건 — 자격이 없다는 뜻이 아니라 공고문을 봐야 한다는 뜻 */}
+        {checkPoints && checkPoints.length > 0 && (
+          <p className="flex items-start gap-1 mb-3 text-[10px] text-slate-400 leading-relaxed">
+            <HelpCircle size={11} className="mt-0.5 shrink-0" />
+            <span>공고문 확인 필요 — {checkPoints.join(' · ')} 조건이 있습니다</span>
+          </p>
         )}
 
         {/* Org Info */}
