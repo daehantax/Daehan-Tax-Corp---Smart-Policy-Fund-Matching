@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserSession, Grant, BizCategory, BizRegions, BizRegionType } from '../types';
 import { CsvService } from '../services/csvService';
-import { matchesRegion, matchesCategory, scoreAllGrants } from '../services/matchingService';
+import { matchesRegion, matchesCategory, scoreAllGrants, matchesInterests } from '../services/matchingService';
 import { GrantCard } from '../components/GrantCard';
 import { Search, Filter, LogOut, Briefcase, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Sparkles, CheckCircle2, ListFilter, Phone, Mail, ChevronDown } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -62,6 +62,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [showInterestSelector, setShowInterestSelector] = useState(true); // Show on first load
   const [recommendLimit, setRecommendLimit] = useState(6);
+  const [keywordLimit, setKeywordLimit] = useState(6);
 
   const [sortMode, setSortMode] = useState<SortMode>(session.type === 'CLIENT' ? 'match' : 'deadline');
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
@@ -72,12 +73,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     [grants, session, selectedInterests]
   );
 
-  // ① 맞춤 추천 목록: 다른 지역 전용(점수 0)은 제외, 점수 높은 순
+  // ① 맞춤 추천 목록: 다른 지역·시군 전용(점수 0)은 제외, 점수 높은 순
   const recommendedGrants = useMemo(
     () => grants
       .filter(g => (matchScores.get(g.id)?.score || 0) > 0)
       .sort((a, b) => (matchScores.get(b.id)?.score || 0) - (matchScores.get(a.id)?.score || 0)),
     [grants, matchScores]
+  );
+
+  // 키워드를 고르셨으면 "그 키워드에 맞는 공고"를 먼저, "그 외 우리 지역 공고"를 뒤에 둔다.
+  // 예전에는 키워드 가점(최대 20)이 지역 가점(40)보다 작아서, '저금리 대출'을 골라도
+  // 무관한 경기도 공고가 상위를 차지했다. 점수만 손대면 왜 이게 위에 있는지 알 수 없으니
+  // 화면에서 묶음을 나눠 이유가 드러나게 한다.
+  const keywordMatched = useMemo(
+    () => selectedInterests.length === 0 ? [] : recommendedGrants.filter(g => matchesInterests(g, selectedInterests)),
+    [recommendedGrants, selectedInterests]
+  );
+  const otherRecommended = useMemo(
+    () => selectedInterests.length === 0 ? recommendedGrants : recommendedGrants.filter(g => !matchesInterests(g, selectedInterests)),
+    [recommendedGrants, selectedInterests]
   );
 
   // 1. Load Data
@@ -214,7 +228,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     {session.region}{session.sigungu?.[0] ? ` ${session.sigungu[0]}` : ''}
                   </span>
                 )}
-                {session.industry && <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600">{session.industry}</span>}
+                {session.bizType && <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600">{session.bizType}</span>}
               </span>
             </div>
             <Button variant="ghost" className="p-2" onClick={onLogout} title="로그아웃">
@@ -298,7 +312,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                   </h2>
                 </div>
                 <p className="text-blue-200 text-sm leading-relaxed">
-                  대한세무법인에 등록된 회사 정보(<span className="font-bold text-white">{session.region || '전국'}{session.sigungu?.[0] ? ` ${session.sigungu[0]}` : ''} · {session.industry || '전체 업종'}</span>)와
+                  대한세무법인에 등록된 회사 정보(<span className="font-bold text-white">{session.region || '전국'}{session.sigungu?.[0] ? ` ${session.sigungu[0]}` : ''}{session.bizType ? ` · ${session.bizType}` : ''}</span>)와
                   관심 키워드를 바탕으로 <span className="font-bold text-white">자동 매칭</span>한 결과입니다.
                 </p>
               </div>
@@ -330,24 +344,73 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
           {recommendedGrants.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recommendedGrants.slice(0, recommendLimit).map(grant => (
-                  <GrantCard
-                    key={grant.id}
-                    grant={grant}
-                    isFavorite={favorites.includes(grant.id)}
-                    onToggleFavorite={toggleFavorite}
-                    matchReasons={matchScores.get(grant.id)?.reasons}
-                  />
-                ))}
-              </div>
-              {recommendedGrants.length > recommendLimit && (
-                <div className="text-center mt-6">
-                  <Button variant="outline" onClick={() => setRecommendLimit(prev => prev + 6)}>
-                    <ChevronDown size={16}/> 추천 더 보기 ({recommendLimit} / {recommendedGrants.length.toLocaleString()}건)
-                  </Button>
+              {/* 고르신 키워드에 맞는 공고 — 키워드를 선택했을 때만 별도 묶음으로 먼저 */}
+              {selectedInterests.length > 0 && (
+                <div className="mb-10">
+                  <h3 className="text-slate-800 font-bold mb-3 flex items-center gap-2">
+                    <span className="w-1 h-5 bg-blue-600 rounded-full"></span>
+                    고르신 키워드에 맞는 공고
+                    <span className="text-sm font-normal text-slate-400">{keywordMatched.length.toLocaleString()}건</span>
+                  </h3>
+                  {keywordMatched.length > 0 ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {keywordMatched.slice(0, keywordLimit).map(grant => (
+                          <GrantCard
+                            key={grant.id}
+                            grant={grant}
+                            isFavorite={favorites.includes(grant.id)}
+                            onToggleFavorite={toggleFavorite}
+                            matchReasons={matchScores.get(grant.id)?.reasons}
+                            warnings={matchScores.get(grant.id)?.warnings}
+                          />
+                        ))}
+                      </div>
+                      {keywordMatched.length > keywordLimit && (
+                        <div className="text-center mt-6">
+                          <Button variant="outline" onClick={() => setKeywordLimit(prev => prev + 6)}>
+                            <ChevronDown size={16}/> 더 보기 ({keywordLimit} / {keywordMatched.length.toLocaleString()}건)
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-8 bg-white rounded-xl border border-dashed border-slate-300">
+                      <p className="text-slate-400 text-sm">고르신 키워드에 맞는 공고가 우리 지역에는 없습니다.</p>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* 그 외 우리 지역·시군 공고 */}
+              <div>
+                {selectedInterests.length > 0 && (
+                  <h3 className="text-slate-800 font-bold mb-3 flex items-center gap-2">
+                    <span className="w-1 h-5 bg-slate-300 rounded-full"></span>
+                    그 외 우리 지역 공고
+                    <span className="text-sm font-normal text-slate-400">{otherRecommended.length.toLocaleString()}건</span>
+                  </h3>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {otherRecommended.slice(0, recommendLimit).map(grant => (
+                    <GrantCard
+                      key={grant.id}
+                      grant={grant}
+                      isFavorite={favorites.includes(grant.id)}
+                      onToggleFavorite={toggleFavorite}
+                      matchReasons={matchScores.get(grant.id)?.reasons}
+                      warnings={matchScores.get(grant.id)?.warnings}
+                    />
+                  ))}
+                </div>
+                {otherRecommended.length > recommendLimit && (
+                  <div className="text-center mt-6">
+                    <Button variant="outline" onClick={() => setRecommendLimit(prev => prev + 6)}>
+                      <ChevronDown size={16}/> 추천 더 보기 ({recommendLimit} / {otherRecommended.length.toLocaleString()}건)
+                    </Button>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">

@@ -49,7 +49,7 @@ export const MockDbService = {
           identifier: normalizedInput,
           companyName: data.companyName || '',
           ceoName: data.ceoName || '',
-          industry: CsvService.mapIndustry(data.bizCategory || ''),
+          bizType: data.bizCategory || '',
           region: CsvService.mapRegion(data.regionHint || ''),
           sigungu: CsvService.mapSigungu(data.regionHint || '')
         };
@@ -70,7 +70,7 @@ export const MockDbService = {
           identifier: DEV_TEST_BRN,
           companyName: '테스트용 샘플기업',
           ceoName: '김테스트',
-          industry: CsvService.mapIndustry('서비스업'),
+          bizType: '서비스업',
           region: CsvService.mapRegion('서울특별시 강남구'),
           sigungu: CsvService.mapSigungu('서울특별시 강남구')
         };
@@ -97,7 +97,7 @@ export const MockDbService = {
         identifier: normalizedInput,
         companyName: result.companyName || '',
         ceoName: result.ceoName || '',
-        industry: CsvService.mapIndustry(result.bizCategory || ''),
+        bizType: result.bizCategory || '',
         region: CsvService.mapRegion(result.regionHint || ''),
         sigungu: CsvService.mapSigungu(result.regionHint || '')
       };

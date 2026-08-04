@@ -182,14 +182,43 @@ export function matchesCategory(g: Grant, cat: string): boolean {
 }
 
 export interface MatchResult {
-  score: number;      // 0 = 매칭 대상 아님 (다른 지역 전용 등)
-  reasons: string[];  // 카드에 표시할 매칭 근거
+  score: number;       // 0 = 매칭 대상 아님 (다른 지역 전용 등)
+  reasons: string[];   // 카드에 표시할 매칭 근거
+  warnings?: string[]; // 자격이 의심되는 점 (제외하지는 않고 카드에 주의 표시)
+}
+
+// ── 업종 적합성 ─────────────────────────────────────────────────────────────
+// 기업마당의 category(금융/기술/경영…)는 업종이 아니라 '지원 성격' 분류다.
+// 그래서 예전처럼 업태를 여기에 매핑해 가점하면(부동산업 → '경영') 근거 없는 점수가 붙는다.
+// 실제로 부동산 임대업 고객사에게 "스마트제조 AXㆍDX 우수사례 공모전", "경기게임오디션"이
+// '경영 분야 +25'로 추천 1·2위에 올라왔다. 그 가점은 제거했다.
+//
+// 대신 동기화 때 사업개요에서 뽑은 target_flags 로 "업종이 안 맞는다"를 표시한다.
+// ⚠ 플래그는 "그 조건이 언급됐다"는 표시일 뿐 "그 업종만 신청 가능"이라는 확정이 아니다.
+// 그래서 제외(score 0)하지 않고 감점 + 주의 배지로만 처리한다 — 잘못 제외하면
+// 자격 있는 공고가 조용히 사라진다.
+const INDUSTRY_MISMATCH_RULES: Array<{ flag: string; fits: RegExp; warning: string }> = [
+  { flag: '제조업', fits: /제조/, warning: '제조업 대상 사업' },
+  { flag: '공장보유', fits: /제조|건설/, warning: '공장 보유 필요' },
+];
+const INDUSTRY_MISMATCH_PENALTY = 20;
+
+/** 공고가 우리 업태와 안 맞아 보이는 점들 (제외하지 않고 표시만) */
+export function industryWarnings(g: Grant, bizType?: string): string[] {
+  const flags = g.targetFlags ?? [];
+  if (flags.length === 0) return [];
+  const type = (bizType || '').trim();
+  if (!type) return [];   // 업태를 모르면 판단하지 않는다
+  return INDUSTRY_MISMATCH_RULES
+    .filter(r => flags.includes(r.flag) && !r.fits.test(type))
+    .map(r => r.warning);
 }
 
 /**
  * 고객사 맞춤 점수 계산.
  * "신청 자격이 없는 것"(다른 시·도 / 다른 시·군 전용 공고)은 score 0 으로 제외하고,
- * 나머지는 지역 > 시·군 > 분야 > 관심 키워드 > 마감 임박 > 인기 순 가중치로 점수화한다.
+ * 나머지는 지역 > 시·군 > 관심 키워드 > 마감 임박 > 인기 순 가중치로 점수화한다.
+ * 업종은 가점이 아니라 "안 맞아 보이면 감점 + 주의 표시"로 다룬다 (INDUSTRY_MISMATCH_RULES 참고).
  */
 export function scoreGrant(g: Grant, session: UserSession, interests: string[]): MatchResult {
   let score = 0;
@@ -241,14 +270,13 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
     }
   }
 
-  // 3) 업종/분야 (가중치 25)
-  const userIndustry = session.industry && session.industry !== '전체' ? session.industry : null;
-  if (userIndustry && matchesCategory(g, userIndustry)) {
-    score += 25;
-    reasons.push(`${userIndustry} 분야`);
-  }
+  // 3) 업종 적합성 — 안 맞아 보이면 감점하고 주의 표시 (제외는 하지 않는다)
+  const warnings = industryWarnings(g, session.bizType);
+  if (warnings.length > 0) score -= INDUSTRY_MISMATCH_PENALTY;
 
-  // 4) 선택한 관심 키워드와 스마트 태그 일치 (키워드당 10, 최대 20)
+  // 4) 선택한 관심 키워드와 스마트 태그 일치 (키워드당 10, 최대 20).
+  //    화면에서는 키워드 일치 공고를 별도 묶음으로 먼저 보여주므로(Dashboard),
+  //    이 가점은 묶음 안에서의 순서를 정하는 역할이다.
   const tagOverlap = (g.tags || []).filter(t => interests.includes(t)).length;
   if (tagOverlap > 0) {
     score += Math.min(tagOverlap * 10, 20);
@@ -269,7 +297,13 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   // 6) 기업마당 조회수(인기) 소폭 가산
   if ((g.views || 0) >= 1000) score += 5;
 
-  return { score: Math.max(score, 1), reasons };
+  return { score: Math.max(score, 1), reasons, warnings: warnings.length ? warnings : undefined };
+}
+
+/** 선택한 관심 키워드에 해당하는 공고인가 (화면에서 묶음을 나누는 기준) */
+export function matchesInterests(g: Grant, interests: string[]): boolean {
+  if (interests.length === 0) return false;
+  return (g.tags || []).some(t => interests.includes(t));
 }
 
 /** 전체 공고에 대해 매칭 점수를 계산해 Map(공고ID → 결과)으로 반환 */

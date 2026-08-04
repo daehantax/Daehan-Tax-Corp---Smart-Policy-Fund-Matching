@@ -1,6 +1,6 @@
 import React from 'react';
 import { Grant, BizCategory } from '../types';
-import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2 } from 'lucide-react';
+import { Building2, ExternalLink, Clock, Heart, Tag, MapPin, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { getGrantRegions, getGrantSigungu } from '../services/matchingService';
 import { EXCLUSIVE_ZONES } from '../services/geo';
 
@@ -9,13 +9,15 @@ interface GrantCardProps {
   isFavorite: boolean;
   onToggleFavorite: (id: string) => void;
   matchReasons?: string[]; // 고객사 로그인 시 매칭 근거 표시 (맞춤순)
+  warnings?: string[];     // 업종이 안 맞아 보이는 점 (제외하지 않고 주의만 표시)
 }
 
 export const GrantCard: React.FC<GrantCardProps> = ({
   grant,
   isFavorite,
   onToggleFavorite,
-  matchReasons
+  matchReasons,
+  warnings
 }) => {
   // Helper for category badge color
   const getCategoryColor = (cat: string) => {
@@ -72,12 +74,17 @@ export const GrantCard: React.FC<GrantCardProps> = ({
           {grant.title}
         </h3>
 
-        {/* 매칭 근거 (고객사 로그인 + 맞춤순일 때) */}
-        {matchReasons && matchReasons.length > 0 && (
+        {/* 매칭 근거 + 주의 (고객사 로그인 + 맞춤순일 때) */}
+        {((matchReasons && matchReasons.length > 0) || (warnings && warnings.length > 0)) && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {matchReasons.map((reason, idx) => (
-              <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+            {(matchReasons || []).map((reason, idx) => (
+              <span key={`r${idx}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                 <CheckCircle2 size={11} /> {reason}
+              </span>
+            ))}
+            {(warnings || []).map((warning, idx) => (
+              <span key={`w${idx}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                <AlertTriangle size={11} /> {warning}
               </span>
             ))}
           </div>

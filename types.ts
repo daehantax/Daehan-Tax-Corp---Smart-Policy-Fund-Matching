@@ -28,7 +28,8 @@ export interface Grant {
 export interface UserSession {
   type: 'CLIENT' | 'GUEST';
   identifier: string; // BRN or Email
-  industry?: string;
+  industry?: string;  // (구) 업태를 지원분야에 매핑한 값 — 매칭에는 쓰지 않는다. 아래 bizType 참고
+  bizType?: string;   // 업태 원문 (예: '부동산업', '제조업') — 업종 적합성 판정·화면 표시용
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display

@@ -246,16 +246,4 @@ export const CsvService = {
     return resolveAddress(address).sigungu;
   },
 
-  mapIndustry(rawIndustry: string): BizCategory {
-    if (!rawIndustry) return BizCategory.ETC;
-    const term = rawIndustry.trim();
-    if (term.includes('제조')) return BizCategory.TECHNOLOGY;
-    if (term.includes('소프트웨어') || term.includes('정보') || term.includes('IT')) return BizCategory.TECHNOLOGY;
-    if (term.includes('도소매') || term.includes('유통') || term.includes('상사')) return BizCategory.DOMESTIC;
-    if (term.includes('수출') || term.includes('무역')) return BizCategory.EXPORT;
-    if (term.includes('건설')) return BizCategory.ETC;
-    if (term.includes('서비스') || term.includes('용역')) return BizCategory.ETC;
-    if (term.includes('부동산업')) return BizCategory.MANAGEMENT;
-    return BizCategory.ETC;
-  }
 };
