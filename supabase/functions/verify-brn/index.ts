@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
     const { data, error } = await admin
       .from('clients')
-      .select('name, biz_type, address, customer_type, client_persons(relation_type, persons(name))')
+      .select('name, biz_type, biz_item, address, customer_type, client_persons(relation_type, persons(name, birth_date, gender))')
       .in('biz_reg_no', [digits, hyphenated])
       .limit(5);
 
@@ -68,12 +68,32 @@ Deno.serve(async (req) => {
     const rep = links.find((cp) => cp.relation_type === '대표자') ?? links[0];
     const repPerson = Array.isArray(rep?.persons) ? rep?.persons[0] : rep?.persons;
 
+    // 대표자 속성은 서버에서 판정해 boolean 만 내려보낸다.
+    // 생년월일·성별은 개인정보이므로 브라우저로 절대 내리지 않는다.
+    // 값이 없으면 undefined — 앱은 "모른다"로 보고 주의를 표시하지 않는다.
+    const youthAge = 39;   // 청년 기준 (중소벤처기업부 만 39세 이하)
+    let isYouthOwner: boolean | undefined;
+    if (repPerson?.birth_date) {
+      const b = new Date(repPerson.birth_date);
+      if (!Number.isNaN(b.getTime())) {
+        const now = new Date();
+        let age = now.getFullYear() - b.getFullYear();
+        const m = now.getMonth() - b.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+        isYouthOwner = age <= youthAge;
+      }
+    }
+    const isFemaleOwner = repPerson?.gender ? repPerson.gender === '여' : undefined;
+
     return json({
       found: true,
       companyName: match.name ?? '',
       ceoName: repPerson?.name ?? '',
       bizCategory: match.biz_type ?? '',   // 업태 (통합 스키마에선 biz_type 컬럼이 업태)
+      bizItem: match.biz_item ?? '',       // 종목 — 산업 분야 판정에 함께 쓴다
       regionHint: match.address ?? '',
+      isYouthOwner,
+      isFemaleOwner,
     });
   } catch (err) {
     console.error('[verify-brn] 오류:', err);

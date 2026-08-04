@@ -50,6 +50,11 @@ export const MockDbService = {
           companyName: data.companyName || '',
           ceoName: data.ceoName || '',
           bizType: data.bizCategory || '',
+          bizItem: data.bizItem || '',
+          // 대표자 속성은 Edge Function 이 서버에서 계산한 boolean 만 받는다
+          // (생년월일·성별은 브라우저로 내려오지 않는다). 값이 없으면 판단하지 않는다.
+          isYouthOwner: typeof data.isYouthOwner === 'boolean' ? data.isYouthOwner : undefined,
+          isFemaleOwner: typeof data.isFemaleOwner === 'boolean' ? data.isFemaleOwner : undefined,
           region: CsvService.mapRegion(data.regionHint || ''),
           sigungu: CsvService.mapSigungu(data.regionHint || '')
         };

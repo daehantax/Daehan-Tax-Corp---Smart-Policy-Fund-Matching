@@ -197,21 +197,63 @@ export interface MatchResult {
 // ⚠ 플래그는 "그 조건이 언급됐다"는 표시일 뿐 "그 업종만 신청 가능"이라는 확정이 아니다.
 // 그래서 제외(score 0)하지 않고 감점 + 주의 배지로만 처리한다 — 잘못 제외하면
 // 자격 있는 공고가 조용히 사라진다.
+// 업태·종목 텍스트 대조 규칙.
+// ⚠ 공백을 반드시 지우고 비교한다 — clients.biz_type 에 '건 설 업'(82건)처럼 글자
+//   사이에 공백이 든 값이 있어서, /건설/ 로 그냥 찾으면 건설업이 인식되지 않는다.
 const INDUSTRY_MISMATCH_RULES: Array<{ flag: string; fits: RegExp; warning: string }> = [
   { flag: '제조업', fits: /제조/, warning: '제조업 대상 사업' },
   { flag: '공장보유', fits: /제조|건설/, warning: '공장 보유 필요' },
+
+  // 특정 산업 분야 전용 사업. 플래그는 동기화 스크립트(INDUSTRY_FLAG_RULES)가 붙이고,
+  // 여기서는 고객사의 업태·종목이 그 산업인지 판정한다 — 이름을 맞춰야 한다.
+  // 방산은 업태·종목으로 식별할 수 없어(고객사 0개사) 규칙에 두지 않는다.
+  { flag: '산업:자동차', fits: /자동차|모빌리티/, warning: '자동차산업 대상' },
+  { flag: '산업:조선', fits: /선박|조선/, warning: '조선산업 대상' },
+  { flag: '산업:섬유', fits: /섬유|의복|봉제|편조|의류/, warning: '섬유산업 대상' },
+  { flag: '산업:식품', fits: /식품|음식료|농산물|축산|음식점/, warning: '식품산업 대상' },
+  { flag: '산업:반도체', fits: /반도체|전자부품|전자집적/, warning: '반도체산업 대상' },
+  { flag: '산업:바이오', fits: /바이오|의약|의료용|생물|화장품/, warning: '바이오산업 대상' },
+  { flag: '산업:화학', fits: /화학|플라스틱|고무|비료|도료/, warning: '석유화학 대상' },
+  { flag: '산업:뿌리', fits: /금속|주조|금형|도금|용접|열처리|단조|주물|표면처리/, warning: '뿌리산업 대상' },
+  { flag: '산업:콘텐츠', fits: /콘텐츠|영상|게임|출판|방송|음악|광고/, warning: '콘텐츠산업 대상' },
+  { flag: '산업:관광', fits: /관광|여행|숙박/, warning: '관광산업 대상' },
 ];
+
+// 대표자 속성 조건. 공고에 이 플래그가 있는데 우리 대표자가 아니면 주의 표시.
+// '청년채용'(청년을 채용하는 기업 지원)은 대표 나이와 무관하므로 여기에 넣지 않는다.
+const OWNER_MISMATCH_RULES: Array<{ flag: string; ok: (s: UserSession) => boolean; warning: string }> = [
+  { flag: '청년창업', ok: s => s.isYouthOwner !== false, warning: '대표자 청년 조건' },
+  { flag: '여성기업', ok: s => s.isFemaleOwner !== false, warning: '여성기업 대상' },
+];
+
 const INDUSTRY_MISMATCH_PENALTY = 20;
 
-/** 공고가 우리 업태와 안 맞아 보이는 점들 (제외하지 않고 표시만) */
-export function industryWarnings(g: Grant, bizType?: string): string[] {
+// 동기화 스크립트가 실제로 붙이는 플래그 이름과 일치하는지 테스트에서 대조한다
+// (services/syncParity.test.ts). 이름이 어긋나면 판정이 조용히 꺼진다.
+export const INDUSTRY_MISMATCH_FLAGS = INDUSTRY_MISMATCH_RULES.map(r => r.flag);
+export const OWNER_MISMATCH_FLAGS = OWNER_MISMATCH_RULES.map(r => r.flag);
+
+/** 업태·종목 비교용 정규화 — 글자 사이 공백을 지운다 ('건 설 업' → '건설업') */
+function normalizeBizText(...parts: (string | undefined)[]): string {
+  return parts.filter(Boolean).join(' ').replace(/\s+/g, '');
+}
+
+/** 공고가 우리 회사와 안 맞아 보이는 점들 (제외하지 않고 표시만) */
+export function industryWarnings(g: Grant, session: Pick<UserSession, 'bizType' | 'bizItem' | 'isYouthOwner' | 'isFemaleOwner'>): string[] {
   const flags = g.targetFlags ?? [];
   if (flags.length === 0) return [];
-  const type = (bizType || '').trim();
-  if (!type) return [];   // 업태를 모르면 판단하지 않는다
-  return INDUSTRY_MISMATCH_RULES
-    .filter(r => flags.includes(r.flag) && !r.fits.test(type))
-    .map(r => r.warning);
+  const warnings: string[] = [];
+
+  const biz = normalizeBizText(session.bizType, session.bizItem);
+  if (biz) {   // 업태를 모르면 업종 판단은 하지 않는다
+    for (const r of INDUSTRY_MISMATCH_RULES) {
+      if (flags.includes(r.flag) && !r.fits.test(biz)) warnings.push(r.warning);
+    }
+  }
+  for (const r of OWNER_MISMATCH_RULES) {
+    if (flags.includes(r.flag) && !r.ok(session as UserSession)) warnings.push(r.warning);
+  }
+  return warnings;
 }
 
 /**
@@ -270,8 +312,8 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
     }
   }
 
-  // 3) 업종 적합성 — 안 맞아 보이면 감점하고 주의 표시 (제외는 하지 않는다)
-  const warnings = industryWarnings(g, session.bizType);
+  // 3) 업종·대표자 적합성 — 안 맞아 보이면 감점하고 주의 표시 (제외는 하지 않는다)
+  const warnings = industryWarnings(g, session);
   if (warnings.length > 0) score -= INDUSTRY_MISMATCH_PENALTY;
 
   // 4) 선택한 관심 키워드와 스마트 태그 일치 (키워드당 10, 최대 20).

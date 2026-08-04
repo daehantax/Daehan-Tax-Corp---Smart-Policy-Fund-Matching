@@ -29,7 +29,12 @@ export interface UserSession {
   type: 'CLIENT' | 'GUEST';
   identifier: string; // BRN or Email
   industry?: string;  // (구) 업태를 지원분야에 매핑한 값 — 매칭에는 쓰지 않는다. 아래 bizType 참고
-  bizType?: string;   // 업태 원문 (예: '부동산업', '제조업') — 업종 적합성 판정·화면 표시용
+  bizType?: string;   // 업태 원문 (예: '부동산업', '건 설 업') — 업종 적합성 판정·화면 표시용
+  bizItem?: string;   // 종목 원문 (예: '배관 및 냉ㆍ난방 공사업') — 산업 분야 판정에 함께 사용
+  // 대표자 속성. Edge Function 이 서버에서 계산해 boolean 만 내려준다 —
+  // 생년월일·성별 같은 개인정보는 브라우저로 내리지 않는다.
+  isYouthOwner?: boolean;   // 대표자가 만 39세 이하
+  isFemaleOwner?: boolean;  // 대표자가 여성
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display

@@ -7,8 +7,10 @@ import {
   extractRegionCodes as jsRegion,
   extractSigunguCodes as jsSigungu,
   extractSupportAmount,
+  extractTargetFlags,
   __setSidoOf,
 } from '../scripts/sync-bizinfo.mjs';
+import { INDUSTRY_MISMATCH_FLAGS, OWNER_MISMATCH_FLAGS } from './matchingService';
 
 // 동기화 스크립트는 Node 단독 실행이라 앱의 TS 모듈을 불러올 수 없고, 같은 규칙을
 // 복제해 두고 있다(주석으로 "함께 수정할 것"이라 표시). 한쪽만 고치면 DB에 저장되는
@@ -63,6 +65,95 @@ describe('앱(TS)과 동기화 스크립트(JS)의 시·군 판정이 같아야 
     const ts = tsSigungu(title, tags, regions).sort();
     const js = jsSigungu(title, tags, regions).sort();
     expect(js).toEqual(ts);
+  });
+});
+
+describe('앱의 판정 규칙이 참조하는 플래그를 동기화 스크립트가 실제로 붙이는가', () => {
+  // 이름이 어긋나면 판정이 조용히 꺼진다. 스크립트 쪽에서 그 플래그가 나오는
+  // 최소 입력을 만들어 실제로 붙는지 확인한다.
+  const SAMPLES: Record<string, { title: string; target: string; summary: string }> = {
+    '제조업': { title: '제조업 지원사업', target: '중소기업', summary: '☞ 제조업 영위기업' },
+    '공장보유': { title: '설비 지원사업', target: '중소기업', summary: '☞ 공장등록증 보유 기업' },
+    '산업:자동차': { title: '자동차산업 신규입직자 지원', target: '중소기업', summary: '☞ 자동차산업 영위기업' },
+    '산업:조선': { title: '중소조선 지원사업', target: '중소기업', summary: '☞ 조선산업 관련 기업' },
+    '산업:섬유': { title: '섬유산업 지원', target: '중소기업', summary: '☞ 섬유산업 영위기업' },
+    '산업:식품': { title: '식품산업 지원', target: '중소기업', summary: '☞ 식품산업 영위기업' },
+    '산업:반도체': { title: '반도체산업 지원', target: '중소기업', summary: '☞ 반도체산업 기업' },
+    '산업:바이오': { title: '바이오산업 지원', target: '중소기업', summary: '☞ 바이오산업 기업' },
+    '산업:화학': { title: '석유화학 지원', target: '중소기업', summary: '☞ 석유화학 업종 기업' },
+    '산업:뿌리': { title: '뿌리산업 지원', target: '중소기업', summary: '☞ 뿌리기업' },
+    '산업:콘텐츠': { title: '콘텐츠산업 지원', target: '중소기업', summary: '☞ 콘텐츠산업 기업' },
+    '산업:관광': { title: '관광산업 지원', target: '중소기업', summary: '☞ 관광기업' },
+    '청년창업': { title: '청년창업 지원사업', target: '창업벤처', summary: '☞ 만 39세 이하 청년창업기업' },
+    '여성기업': { title: '여성기업 육성사업', target: '중소기업', summary: '☞ 여성기업' },
+  };
+
+  it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS])('%s', (flag) => {
+    const s = SAMPLES[flag];
+    expect(s, `앱 규칙에 있는 '${flag}' 의 샘플 입력이 이 테스트에 없다`).toBeDefined();
+    expect(extractTargetFlags(s.title, s.target, s.summary)).toContain(flag);
+  });
+});
+
+describe('extractTargetFlags — 자격 문단만 보는 플래그', () => {
+  it('본문 뒤쪽의 부수 언급으로는 대표자 조건이 붙지 않는다', () => {
+    // "여성기업 우대" 한 줄 때문에 운전자금·육성기금 공고까지 딸려 오던 문제
+    const flags = extractTargetFlags(
+      '[경기] 화성시 2026년 중소기업 운전자금 지원사업',
+      '중소기업',
+      '☞ 화성시 관내 중소기업 ☞ 융자 지원 - 여성기업 우대 가점 부여',
+    );
+    expect(flags).not.toContain('여성기업');
+  });
+
+  it('자격 문단(첫 ☞)에 있으면 붙는다', () => {
+    expect(extractTargetFlags('여성기업 육성사업', '중소기업', '☞ 여성기업 ☞ 사업화 자금 지원'))
+      .toContain('여성기업');
+  });
+
+  it('청년 채용 지원사업에는 청년창업 플래그를 붙이지 않는다', () => {
+    const flags = extractTargetFlags(
+      '[경북] 2026년 청년 일경험 시범사업 참여기업 모집',
+      '중소기업',
+      '☞ 경북 소재 중소기업 ☞ 청년 근로자 채용 시 장려금 지원',
+    );
+    expect(flags).not.toContain('청년창업');
+  });
+
+  it("'만 39세 이하'는 채용 조건에도 쓰이므로 대표자 조건으로 보지 않는다", () => {
+    // 실제 공고: "도내 만 39세 이하 청년 여성을 채용할 기업"
+    expect(extractTargetFlags(
+      '[경남] 2026년 11차 청년여성 일경험 지원사업 참여기업 모집',
+      '중소기업',
+      '☞ 도내 만 39세 이하 청년 여성을 채용할 기업 ☞ 인건비 지원',
+    )).not.toContain('청년창업');
+  });
+
+  it('나열형("A, B, C 등")은 그 유형 전용이 아니므로 배제한다', () => {
+    // 실제 공고: "지식서비스산업, 문화콘텐츠산업, 벤처기업, 청년창업기업 등"
+    const flags = extractTargetFlags(
+      '[서울] 2026년 청년일자리도약장려금 사업 참여기업 모집',
+      '중소기업',
+      '☞ 서울시 종로구 소재 5인 이상 기업 - 지식서비스산업, 문화콘텐츠산업, 벤처기업, 청년창업기업 등 ☞ 장려금 지원',
+    );
+    expect(flags).not.toContain('산업:콘텐츠');
+    expect(flags).not.toContain('청년창업');
+  });
+
+  it('택일형("A 또는 B")도 배제한다', () => {
+    // 실제 공고: "소상공인 또는 여성기업"
+    expect(extractTargetFlags(
+      '[경남] 2026년 소상공인 온라인입점 지원사업',
+      '중소기업',
+      '☞ 경남 도내 사업장을 운영 중인 소상공인 또는 여성기업 ☞ 입점 지원',
+    )).not.toContain('여성기업');
+  });
+
+  it('조건형은 그대로 붙는다', () => {
+    expect(extractTargetFlags('여성기업 육성사업 공고', '중소기업', '☞ 여성기업 ☞ 사업화 지원'))
+      .toContain('여성기업');
+    expect(extractTargetFlags('자동차산업 신규입직자 지원', '중소기업', '☞ 경기도 소재 자동차산업 영위기업 ☞ 지원금'))
+      .toContain('산업:자동차');
   });
 });
 

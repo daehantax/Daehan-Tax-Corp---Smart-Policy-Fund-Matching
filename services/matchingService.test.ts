@@ -170,7 +170,7 @@ describe('scoreGrant — 자격 없는 공고는 제외한다', () => {
 describe('industryWarnings — 업종 적합성은 제외가 아니라 주의로', () => {
   it('제조업 전용 공고 + 부동산업 고객사 → 주의 표시', () => {
     const g = grant({ regionCodes: ['경기'], targetFlags: ['중소기업', '제조업'] });
-    expect(industryWarnings(g, '부동산업')).toEqual(['제조업 대상 사업']);
+    expect(industryWarnings(g, { bizType: '부동산업' })).toEqual(['제조업 대상 사업']);
     const r = scoreGrant(g, session(), []);
     expect(r.warnings).toEqual(['제조업 대상 사업']);
     expect(r.score).toBeGreaterThan(0);   // 제외하지는 않는다
@@ -178,13 +178,66 @@ describe('industryWarnings — 업종 적합성은 제외가 아니라 주의로
 
   it('제조업 고객사에게는 주의를 붙이지 않는다', () => {
     const g = grant({ targetFlags: ['제조업'] });
-    expect(industryWarnings(g, '제조업')).toEqual([]);
+    expect(industryWarnings(g, { bizType: '제조업' })).toEqual([]);
   });
 
   it('업태를 모르면 판단하지 않는다', () => {
     const g = grant({ targetFlags: ['제조업'] });
-    expect(industryWarnings(g, '')).toEqual([]);
-    expect(industryWarnings(g, undefined)).toEqual([]);
+    expect(industryWarnings(g, { bizType: '' })).toEqual([]);
+    expect(industryWarnings(g, {})).toEqual([]);
+  });
+
+  it("업태 값에 든 공백을 지우고 비교한다 ('건 설 업' 82건)", () => {
+    // '건 설 업'.match(/건설/) 은 null 이라 건설업이 인식되지 않던 버그
+    const g = grant({ targetFlags: ['공장보유'] });
+    expect(industryWarnings(g, { bizType: '건 설 업' })).toEqual([]);
+    expect(industryWarnings(g, { bizType: '부동산업' })).toEqual(['공장 보유 필요']);
+  });
+});
+
+describe('산업 분야 제한 — 티엠이앤씨 사례', () => {
+  // 건설업(배관·냉난방 공사) 고객사에게 "자동차산업 영위기업" 전용 공고가 그대로 떴다
+  const carGrant = grant({ regionCodes: ['경기'], targetFlags: ['중소기업', '산업:자동차'] });
+
+  it('건설업 고객사에게 자동차산업 전용 공고는 주의 표시', () => {
+    expect(industryWarnings(carGrant, { bizType: '건 설 업', bizItem: '배관 및 냉ㆍ난방 공사업' }))
+      .toEqual(['자동차산업 대상']);
+  });
+
+  it('종목에 자동차가 있으면 주의를 붙이지 않는다', () => {
+    expect(industryWarnings(carGrant, { bizType: '제조업', bizItem: '자동차부품 제조업' })).toEqual([]);
+  });
+
+  it('업태가 아니라 종목으로만 식별되는 경우도 잡는다', () => {
+    const foodGrant = grant({ targetFlags: ['산업:식품'] });
+    expect(industryWarnings(foodGrant, { bizType: '도매 및 소매업', bizItem: '식품 도매업' })).toEqual([]);
+    expect(industryWarnings(foodGrant, { bizType: '부동산업', bizItem: '비주거용 건물 임대업' }))
+      .toEqual(['식품산업 대상']);
+  });
+});
+
+describe('대표자 속성 조건', () => {
+  it('청년창업 공고 + 대표가 청년이 아니면 주의', () => {
+    const g = grant({ targetFlags: ['청년창업'] });
+    expect(industryWarnings(g, { bizType: '부동산업', isYouthOwner: false })).toEqual(['대표자 청년 조건']);
+    expect(industryWarnings(g, { bizType: '부동산업', isYouthOwner: true })).toEqual([]);
+  });
+
+  it('대표자 정보를 모르면 판단하지 않는다', () => {
+    const g = grant({ targetFlags: ['청년창업', '여성기업'] });
+    expect(industryWarnings(g, { bizType: '부동산업' })).toEqual([]);
+  });
+
+  it('여성기업 공고 + 대표가 남성이면 주의', () => {
+    const g = grant({ targetFlags: ['여성기업'] });
+    expect(industryWarnings(g, { bizType: '부동산업', isFemaleOwner: false })).toEqual(['여성기업 대상']);
+    expect(industryWarnings(g, { bizType: '부동산업', isFemaleOwner: true })).toEqual([]);
+  });
+
+  it("'청년채용'(청년을 채용하는 기업 지원)은 대표 나이와 무관하다", () => {
+    // 청년 관련 공고 74건 중 36건이 이 유형 — 대표 나이 주의를 붙이면 오탐
+    const g = grant({ targetFlags: ['청년채용'] });
+    expect(industryWarnings(g, { bizType: '부동산업', isYouthOwner: false })).toEqual([]);
   });
 });
 
