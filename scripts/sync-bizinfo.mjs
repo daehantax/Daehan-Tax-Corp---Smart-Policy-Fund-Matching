@@ -555,7 +555,16 @@ async function main() {
   console.log(`[sync-bizinfo] 완료: ${rows.length}건 저장 (마감 제외 ${expired}건, 수파베이스 ${supabaseSynced ? '동기화됨' : '건너뜀'}) → ${path.relative(ROOT, OUT_CSV)}`);
 }
 
-main().catch(err => {
-  console.error('[sync-bizinfo] 실패:', err);
-  process.exit(1);
-});
+// 이 파일을 직접 실행했을 때만 동기화를 수행한다.
+// 테스트(services/sync-parity.test.ts)가 아래 순수 함수들을 import 해서
+// 앱(TS) 구현과 결과가 같은지 대조하므로, import 만으로 API를 호출하면 안 된다.
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isDirectRun) {
+  main().catch(err => {
+    console.error('[sync-bizinfo] 실패:', err);
+    process.exit(1);
+  });
+}
+
+export { loadDivisions, extractRegionCodes, extractSigunguCodes, extractTargetFlags, extractSupportAmount };
+export function __setSidoOf(map) { SIDO_OF = map; }

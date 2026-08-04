@@ -87,7 +87,7 @@ interface SmartTagInput {
   hashtags?: string;
 }
 
-function computeSmartTags(input: SmartTagInput): string[] {
+export function computeSmartTags(input: SmartTagInput): string[] {
   const text = [input.title, input.category, input.subCategory, input.summary, input.target, input.hashtags]
     .filter(Boolean).join(' ').toLowerCase();
   const sub = (input.subCategory || '').trim();

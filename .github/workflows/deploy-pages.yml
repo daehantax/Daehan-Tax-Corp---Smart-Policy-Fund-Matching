@@ -26,6 +26,11 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+
+      # 매칭 회귀 테스트. 동기화로 갱신된 공고 데이터(public/data)까지 함께 검증하므로,
+      # 새 데이터가 매칭 불변식을 깨면 배포를 막고 알림이 온다.
+      - run: npm test
+
       - run: npm run build
         env:
           GITHUB_PAGES: 'true'
