@@ -31,30 +31,70 @@ const LOCAL_GRANT_CSV_CANDIDATES = [
 
 let cachedGrantDb: Grant[] | null = null;
 
-// 스마트 태깅: 공고 텍스트를 분석해 관심 키워드 태그를 붙인다 (수파베이스/CSV 공용)
-function computeSmartTags(parts: (string | undefined)[]): string[] {
-  const tags: string[] = [];
-  const textToAnalyze = parts.filter(Boolean).join(' ').toLowerCase();
+// ==============================================================================
+// 스마트 태깅 — 사장님이 고르는 관심 키워드 6종을 공고에 붙인다 (수파베이스/CSV 공용)
+//
+// 예전에는 넓은 단어를 텍스트 전체에서 찾았다(기술|연구|개발|r&d|특허 …). 그 결과
+//   · 🧪 기술개발이 전체의 46%(671건)에 붙어 필터로서 의미가 없었다 ('기술' 한 단어로 575건)
+//   · "기술자료 임치 수수료 지원"이 '금융'·'보증' 언급 때문에 💵 저금리 대출로 잡혀
+//     저금리 대출을 고른 부동산 임대업 고객사의 추천 1위에 올라왔다
+//   · '구축'(기반 구축·플랫폼 구축)이 🏭 시설/기계구입으로 잡혔다
+//
+// 그래서 판정 순서를 바꿨다.
+//   1순위 sub_category — 기업마당이 사람 손으로 분류한 중분류. 우리 정규식보다 정확하다.
+//   2순위 텍스트 키워드 — 부수 언급에 걸리지 않는 좁은 단어만 남긴다.
+//
+// 빼기로 한 넓은 단어: 기술 · 구축 · 금융 · 개발 · 해외 · 시설 · 일자리 · 고용창출 · 육성자금
+//   ('육성자금'은 인증 혜택 안내로 "중소기업육성자금 우대"라고 적힌 공고까지 끌어왔고,
+//    '일자리'·'고용창출'은 "일자리 창출 효과" 같은 부수 문구에 걸렸다)
+// ==============================================================================
+type TagRule = { sub: string[]; kw: string[] };
 
-  if (textToAnalyze.includes('인력') || textToAnalyze.includes('고용') || textToAnalyze.includes('일자리') || textToAnalyze.includes('채용') || textToAnalyze.includes('청년')) {
-      tags.push('💰 인건비/고용');
-  }
-  if (textToAnalyze.includes('시설') || textToAnalyze.includes('기계') || textToAnalyze.includes('장비') || textToAnalyze.includes('구축') || textToAnalyze.includes('스마트공장')) {
-      tags.push('🏭 시설/기계구입');
-  }
-  if (textToAnalyze.includes('마케팅') || textToAnalyze.includes('홍보') || textToAnalyze.includes('판로') || textToAnalyze.includes('전시회') || textToAnalyze.includes('입점')) {
-      tags.push('📢 마케팅/홍보');
-  }
-  if (textToAnalyze.includes('기술') || textToAnalyze.includes('연구') || textToAnalyze.includes('개발') || textToAnalyze.includes('r&d') || textToAnalyze.includes('특허')) {
-      tags.push('🧪 기술개발(R&D)');
-  }
-  if (textToAnalyze.includes('수출') || textToAnalyze.includes('해외') || textToAnalyze.includes('무역') || textToAnalyze.includes('글로벌')) {
-      tags.push('🚢 수출/해외진출');
-  }
-  if (textToAnalyze.includes('융자') || textToAnalyze.includes('대출') || textToAnalyze.includes('보증') || textToAnalyze.includes('금융') || textToAnalyze.includes('운전자금')) {
-      tags.push('💵 저금리 대출');
-  }
-  return tags;
+const SMART_TAG_RULES: Record<string, TagRule> = {
+  '💰 인건비/고용': {
+    sub: ['고용유지', '고용환경개선', '국내일반인력', '해외인력', '교육/훈련/연수', '인력지원'],
+    kw: ['인건비', '고용장려금', '장려금', '채용지원', '근로자 채용'],
+  },
+  '🏭 시설/기계구입': {
+    sub: ['시설/입지지원', '기술인력/장비지원', '작업환경개선'],
+    kw: ['스마트공장', '기계 구입', '장비 구입', '설비투자', '시설자금', '시설개선', '기자재'],
+  },
+  '📢 마케팅/홍보': {
+    // '디자인/상품화/사업화'는 제품 개발·사업화 성격이라 마케팅과 다르므로 넣지 않는다
+    sub: ['홍보지원', '온라인', '오프라인', '시장개척'],
+    kw: ['마케팅', '판로개척', '전시회', '박람회', '홍보물', '브랜드'],
+  },
+  '🧪 기술개발(R&D)': {
+    sub: ['기술사업화/이전/지도', '공동기술개발', '단독기술개발', '혼합(단독+공동)', '시험/인증'],
+    kw: ['연구개발', 'r&d', '기술개발', '특허', '시제품'],
+  },
+  '🚢 수출/해외진출': {
+    sub: ['해외진출', '해외진출준비', 'FTA활용/대응', '보험(수출+무역)', '수출바우처'],
+    kw: ['수출바우처', '수출기업', '해외진출', '무역사절단', '해외전시회', '바이어'],
+  },
+  '💵 저금리 대출': {
+    sub: ['융자', '보증'],
+    kw: ['이차보전', '운전자금', '융자한도', '저금리', '대출한도', '특례보증'],
+  },
+};
+
+interface SmartTagInput {
+  title?: string;
+  category?: string;
+  subCategory?: string;
+  summary?: string;
+  target?: string;
+  hashtags?: string;
+}
+
+function computeSmartTags(input: SmartTagInput): string[] {
+  const text = [input.title, input.category, input.subCategory, input.summary, input.target, input.hashtags]
+    .filter(Boolean).join(' ').toLowerCase();
+  const sub = (input.subCategory || '').trim();
+
+  return Object.entries(SMART_TAG_RULES)
+    .filter(([, rule]) => rule.sub.includes(sub) || rule.kw.some(k => text.includes(k.toLowerCase())))
+    .map(([tag]) => tag);
 }
 
 // 수파베이스 policy_grants 한 행 → 앱 Grant 형식 변환
@@ -86,7 +126,10 @@ function mapSupabaseRow(row: any): Grant {
       : extractSigunguCodes(row.title, hashtags.join(' ')),
     targetFlags: Array.isArray(row.target_flags) ? row.target_flags : [],
     views: Number(row.views) || 0,
-    tags: computeSmartTags([row.title, row.category, row.sub_category, row.summary, row.target, hashtags.join(' ')]),
+    tags: computeSmartTags({
+      title: row.title, category: row.category, subCategory: row.sub_category,
+      summary: row.summary, target: row.target, hashtags: hashtags.join(' '),
+    }),
   };
 }
 
@@ -194,8 +237,10 @@ export const CsvService = {
                  .map((t: string) => t.trim())
                  .filter(Boolean);
 
-               // 스마트 태깅 (제목·분야에 더해 사업개요/지원대상/해시태그까지 분석)
-               const tags = computeSmartTags([title, categoryRaw, subCategory, summary, target, hashtags.join(' ')]);
+               // 스마트 태깅 (중분류 우선 + 좁은 키워드 보조 — SMART_TAG_RULES 참고)
+               const tags = computeSmartTags({
+                 title, category: categoryRaw, subCategory, summary, target, hashtags: hashtags.join(' '),
+               });
 
                const department = row['소관부처'] || row['department'] || '관계부처';
                const agency = row['사업수행기관'] || row['agency'] || '';
