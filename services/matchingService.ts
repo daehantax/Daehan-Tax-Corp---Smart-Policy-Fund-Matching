@@ -218,6 +218,7 @@ const INDUSTRY_MISMATCH_RULES: Array<{ flag: string; fits: RegExp; warning: stri
   { flag: '산업:뿌리', fits: /금속|주조|금형|도금|용접|열처리|단조|주물|표면처리/, warning: '뿌리산업 대상' },
   { flag: '산업:콘텐츠', fits: /콘텐츠|영상|게임|출판|방송|음악|광고/, warning: '콘텐츠산업 대상' },
   { flag: '산업:관광', fits: /관광|여행|숙박/, warning: '관광산업 대상' },
+  { flag: '산업:예술', fits: /예술|공연|문화|스포츠|여가|창작|미술|음악/, warning: '예술분야 대상' },
 ];
 
 // 대표자 속성·사업자 형태 조건. 공고에 이 플래그가 있는데 우리 회사가 아니면 주의 표시.
@@ -236,6 +237,9 @@ const OWNER_MISMATCH_RULES: Array<{ flag: string; ok: (s: UserSession) => boolea
 // 감점하지 않는다 — 자격이 없다는 뜻이 아니라 "우리가 확인하지 못했다"는 뜻이다.
 // 자격 문단 전수 조사 결과 조건은 14종이고, 아래가 DB 데이터가 없어 판정 불가한 것들이다.
 const UNVERIFIABLE_FLAG_LABELS: Record<string, string> = {
+  // 산업 제한은 롱테일이라(방위산업 5건, 이차전지분야 3건, 수소산업 2건 …) 명시 테이블로
+  // 다 덮을 수 없다. 테이블에 없는 산업 제한은 판정하지 않고 "확인 필요"로 알린다.
+  '조건:업종제한': '업종 제한',
   '조건:근로자수': '상시근로자 수',
   '업력제한': '업력',
   '조건:매출액': '매출액',

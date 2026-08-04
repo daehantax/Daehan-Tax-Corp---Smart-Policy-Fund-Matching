@@ -84,6 +84,7 @@ describe('앱의 판정 규칙이 참조하는 플래그를 동기화 스크립�
     '산업:뿌리': { title: '뿌리산업 지원', target: '중소기업', summary: '☞ 뿌리기업' },
     '산업:콘텐츠': { title: '콘텐츠산업 지원', target: '중소기업', summary: '☞ 콘텐츠산업 기업' },
     '산업:관광': { title: '관광산업 지원', target: '중소기업', summary: '☞ 관광기업' },
+    '산업:예술': { title: '예술산업 금융지원 시범사업(융자)', target: '중소기업', summary: '☞ 예술 분야 사업자' },
     '청년창업': { title: '청년창업 지원사업', target: '창업벤처', summary: '☞ 만 39세 이하 청년창업기업' },
     '여성기업': { title: '여성기업 육성사업', target: '중소기업', summary: '☞ 여성기업' },
     '대상:법인': { title: '소상공인(법인사업자) 비즈플러스카드 지원사업', target: '소상공인', summary: '☞ 매출액 기준을 충족하는 법인사업자' },
@@ -155,6 +156,28 @@ describe('extractTargetFlags — 자격 문단만 보는 플래그', () => {
     const flags = extractTargetFlags('2026년 지원사업', '중소기업', '☞ 개인사업자 또는 법인사업자 ☞ 지원');
     expect(flags).not.toContain('대상:법인');
     expect(flags).not.toContain('대상:개인');
+  });
+
+  it('명시 테이블에 없는 산업 제한은 "업종 제한" 확인 필요로 알린다', () => {
+    // 산업 제한은 롱테일이라 개별 규칙으로 다 덮을 수 없다
+    expect(extractTargetFlags('2026년 AI 기반 조명산업의 자원순환 실증 지원', '중소기업', '☞ 중소기업'))
+      .toContain('조건:업종제한');
+    expect(extractTargetFlags('2026년 지원사업', '중소기업', '☞ 해운항만산업 관련 기업'))
+      .toContain('조건:업종제한');
+  });
+
+  it('산업과 무관한 "○○분야" 표현은 업종 제한으로 보지 않는다', () => {
+    // "기술사업화 유공자 포상"의 '포상분야', "환경형 예비사회적기업"의 '환경분야' 등
+    expect(extractTargetFlags('2026년 기술사업화 유공자 포상 신청', '중소기업', '☞ 포상분야별 신청 자격'))
+      .not.toContain('조건:업종제한');
+    expect(extractTargetFlags('2026년 지원사업 모집', '중소기업', '☞ 모집분야 및 규모'))
+      .not.toContain('조건:업종제한');
+  });
+
+  it('명시 테이블로 판정한 산업이 있으면 중복해서 확인 필요를 붙이지 않는다', () => {
+    const flags = extractTargetFlags('자동차산업 신규입직자 지원', '중소기업', '☞ 자동차산업 영위기업');
+    expect(flags).toContain('산업:자동차');
+    expect(flags).not.toContain('조건:업종제한');
   });
 
   it('판정 불가 조건은 나열형이어도 표시한다 (조건이 실제로 있으므로)', () => {
