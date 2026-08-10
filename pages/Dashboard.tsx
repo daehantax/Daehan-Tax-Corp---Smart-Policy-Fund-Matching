@@ -3,8 +3,9 @@ import { UserSession, Grant, BizCategory, BizRegions, BizRegionType } from '../t
 import { CsvService } from '../services/csvService';
 import { matchesRegion, matchesCategory, scoreAllGrants, matchesInterests } from '../services/matchingService';
 import { GrantCard } from '../components/GrantCard';
-import { Search, Filter, LogOut, Briefcase, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Sparkles, CheckCircle2, ListFilter, Phone, Mail, ChevronDown } from 'lucide-react';
+import { Search, Filter, LogOut, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Sparkles, CheckCircle2, ListFilter, Phone, Mail, ChevronDown } from 'lucide-react';
 import { Button } from '../components/Button';
+import { BrandMark } from '../components/BrandMark';
 
 interface DashboardProps {
   session: UserSession;
@@ -209,15 +210,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
 
-          {/* [로고 영역] 이미지 로고를 사용하려면 아래 주석을 해제하고 img 태그를 사용하세요 */}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.reload()}>
-            {/* 예시: <img src="/logo.png" alt="대한세무법인 로고" className="h-8 w-auto" /> */}
-            <div className="bg-blue-900 text-white p-1.5 rounded-lg">
-              <Briefcase size={20} />
-            </div>
-            <span className="font-bold text-xl text-slate-800 tracking-tight">Daehan Tax</span>
+          {/* [로고 영역] 클릭하면 조회 화면(사업자번호 입력)으로 돌아간다.
+              세션을 지워야 랜딩 화면이 다시 뜨므로 로그아웃과 같은 동작이다. */}
+          <button
+            type="button"
+            onClick={onLogout}
+            title="조회 화면으로"
+            aria-label="조회 화면으로"
+            className="flex items-center gap-2 rounded-lg -mx-1 px-1 py-1 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-900 transition-colors"
+          >
+            <BrandMark className="h-7 sm:h-8" />
             <span className="hidden sm:inline-block text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">고객사 전용</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex flex-col text-right">
