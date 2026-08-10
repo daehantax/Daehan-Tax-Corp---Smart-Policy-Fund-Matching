@@ -10,21 +10,26 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   const [brn, setBrn] = useState('');
+  const [ceoName, setCeoName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [clientNotFound, setClientNotFound] = useState(false);
+  // 실패 종류. '고객사 아님'과 '시스템 오류'는 문구가 달라야 한다 —
+  // 오류를 "고객사 아님"으로 보여주면 실제 고객사가 혼란스러워한다.
+  const [failure, setFailure] = useState<'not_found' | 'rate_limited' | 'error' | null>(null);
+
+  const clearFailure = () => setFailure(null);
 
   // Client Login Handler
   const handleClientLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setClientNotFound(false);
+    setFailure(null);
 
-    const session = await MockDbService.verifyClient(brn);
+    const result = await MockDbService.verifyClient(brn, ceoName);
 
-    if (session) {
-      onLogin(session);
+    if (result.status === 'ok') {
+      onLogin(result.session);
     } else {
-      setClientNotFound(true);
+      setFailure(result.status);
     }
     setLoading(false);
   };
@@ -65,60 +70,111 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                 <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">MEMBERS ONLY</span>
               </h2>
               <p className="text-slate-500 mb-6 text-sm">
-                대한세무법인과 함께하시는 고객사는 <span className="font-bold text-slate-700">사업자번호 입력만으로</span> 회사의
-                지역·업종 정보에 맞춰 자동 매칭된 결과를 받아보실 수 있습니다.
+                대한세무법인과 함께하시는 고객사는 <span className="font-bold text-slate-700">사업자번호와 대표자 성함</span>만
+                입력하시면 회사의 지역·업종 정보에 맞춰 자동 매칭된 결과를 받아보실 수 있습니다.
               </p>
 
-              <form onSubmit={handleClientLogin} className="space-y-6">
+              <form onSubmit={handleClientLogin} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">사업자 등록번호</label>
                   <input
                     type="text"
                     value={brn}
-                    onChange={(e) => { setBrn(e.target.value); setClientNotFound(false); }}
+                    onChange={(e) => { setBrn(e.target.value); clearFailure(); }}
                     placeholder="000-00-00000"
                     className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:outline-none transition-all text-lg tracking-wider font-mono
-                      ${clientNotFound ? 'border-red-300 focus:ring-red-200 bg-red-50' : 'border-slate-300 focus:ring-blue-900 focus:border-blue-900'}`}
+                      ${failure === 'not_found' ? 'border-red-300 focus:ring-red-200 bg-red-50' : 'border-slate-300 focus:ring-blue-900 focus:border-blue-900'}`}
                   />
-
-                  {/* 미등록 사업자 안내 — 고객사 전용 서비스임을 안내하고 문의처 연결 */}
-                  {clientNotFound && (
-                    <div className="mt-4 p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fadeIn">
-                      <div className="flex items-start gap-3 mb-4">
-                         <AlertCircle className="text-orange-500 shrink-0 mt-0.5" size={20} />
-                         <div className="text-sm">
-                           <p className="font-bold text-slate-800 mb-1">등록된 고객사 정보가 없습니다.</p>
-                           <p className="text-slate-600 leading-relaxed">
-                             이 서비스는 <span className="text-blue-900 font-bold">대한세무법인 고객사</span>에게만
-                             제공되는 전용 혜택입니다.<br/>
-                             함께하고 싶으시다면 부담 없이 문의해 주세요 — 기장 상담과 함께
-                             정책자금 매칭도 안내해 드립니다.
-                           </p>
-                         </div>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <a href="tel:031-783-8877" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-blue-900 text-white text-sm font-bold hover:bg-blue-800 transition-colors">
-                          <Phone size={15}/> 031-783-8877
-                        </a>
-                        <a href="mailto:tax@taxdh.net" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-slate-300 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
-                          <Mail size={15}/> tax@taxdh.net
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {!clientNotFound && (
-                      <div className="text-xs text-slate-400 mt-2">
-                        * 입력하신 번호는 조회 목적으로만 사용되며 저장되지 않습니다.
-                      </div>
-                  )}
                 </div>
 
-                {!clientNotFound && (
-                  <Button type="submit" fullWidth disabled={loading} className="py-4 text-lg">
-                      {loading ? '조회 중...' : <>나의 맞춤 지원금 조회하기 <ArrowRight size={18}/></>}
-                  </Button>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">대표자 성명</label>
+                  <input
+                    type="text"
+                    value={ceoName}
+                    onChange={(e) => { setCeoName(e.target.value); clearFailure(); }}
+                    placeholder="홍길동"
+                    autoComplete="off"
+                    className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:outline-none transition-all text-lg
+                      ${failure === 'not_found' ? 'border-red-300 focus:ring-red-200 bg-red-50' : 'border-slate-300 focus:ring-blue-900 focus:border-blue-900'}`}
+                  />
+                  <p className="text-xs text-slate-400 mt-2">
+                    공동사업자는 대표자 중 한 분의 성함을 입력하시면 됩니다.
+                  </p>
+                </div>
+
+                {/* 미등록 안내 — 사업자번호·대표자 성명 중 어느 쪽이 틀렸는지는 구분해 알리지 않는다.
+                    구분해 주면 "번호는 맞다"는 사실이 새어나가 고객사 명단 확인 수단이 된다. */}
+                {failure === 'not_found' && (
+                  <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fadeIn">
+                    <div className="flex items-start gap-3 mb-4">
+                       <AlertCircle className="text-orange-500 shrink-0 mt-0.5" size={20} />
+                       <div className="text-sm">
+                         <p className="font-bold text-slate-800 mb-1">등록된 고객사 정보가 없습니다.</p>
+                         <p className="text-slate-600 leading-relaxed">
+                           이 서비스는 <span className="text-blue-900 font-bold">대한세무법인 고객사</span>에게만
+                           제공되는 전용 혜택입니다.<br/>
+                           함께하고 싶으시다면 부담 없이 문의해 주세요 — 기장 상담과 함께
+                           정책자금 매칭도 안내해 드립니다.
+                         </p>
+                       </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <a href="tel:031-783-8877" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-blue-900 text-white text-sm font-bold hover:bg-blue-800 transition-colors">
+                        <Phone size={15}/> 031-783-8877
+                      </a>
+                      <a href="mailto:tax@taxdh.net" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-slate-300 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
+                        <Mail size={15}/> tax@taxdh.net
+                      </a>
+                    </div>
+                  </div>
                 )}
+
+                {/* 시스템 오류 · 호출 제한 — "고객사 아님"과 문구를 다르게 한다 */}
+                {(failure === 'error' || failure === 'rate_limited') && (
+                  <div className="p-5 bg-amber-50 rounded-xl border border-amber-200 animate-fadeIn">
+                    <div className="flex items-start gap-3 mb-4">
+                      <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                      <div className="text-sm">
+                        {failure === 'rate_limited' ? (
+                          <>
+                            <p className="font-bold text-slate-800 mb-1">조회 시도가 너무 많습니다.</p>
+                            <p className="text-slate-600 leading-relaxed">
+                              1분 정도 기다린 뒤 다시 시도해 주세요.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-bold text-slate-800 mb-1">일시적인 오류입니다.</p>
+                            <p className="text-slate-600 leading-relaxed">
+                              잠시 후 다시 시도해 주세요. 계속 같은 화면이 나오면 아래로 연락 주시면
+                              바로 확인해 드리겠습니다.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <a href="tel:031-783-8877" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-blue-900 text-white text-sm font-bold hover:bg-blue-800 transition-colors">
+                        <Phone size={15}/> 031-783-8877
+                      </a>
+                      <a href="mailto:tax@taxdh.net" className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-slate-300 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
+                        <Mail size={15}/> tax@taxdh.net
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {!failure && (
+                  <div className="text-xs text-slate-400">
+                    * 입력하신 정보는 조회 목적으로만 사용하며 별도로 보관하지 않습니다.
+                    부정 사용 방지를 위해 접속 기록은 일정 기간 보관됩니다.
+                  </div>
+                )}
+
+                <Button type="submit" fullWidth disabled={loading || !brn.trim() || !ceoName.trim()} className="py-4 text-lg">
+                    {loading ? '조회 중...' : <>나의 맞춤 지원금 조회하기 <ArrowRight size={18}/></>}
+                </Button>
               </form>
             </div>
           </div>

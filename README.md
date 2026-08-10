@@ -47,7 +47,7 @@ npm test
 services/geo.ts              행정구역 판정 (시도·시군구·권역) — 지역 로직의 단일 출처
 services/matchingService.ts  매칭 점수·자격 판정
 services/csvService.ts       공고 로드(수파베이스 → 구글시트 → CSV 폴백) + 스마트 태깅
-services/mockDb.ts           사업자번호 확인 (Edge Function → Apps Script 폴백)
+services/mockDb.ts           고객사 확인 (사업자번호 + 대표자 성명 → Edge Function. 폴백 없음)
 data/administrative-divisions.json  행정구역 사전 (scripts/gen-divisions.mjs 로 생성)
 scripts/sync-bizinfo.mjs     기업마당 API → CSV + 수파베이스 업서트 (GitHub Actions)
 supabase/functions/verify-brn 사업자번호 대조 Edge Function

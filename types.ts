@@ -39,7 +39,8 @@ export interface UserSession {
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display
-  ceoName?: string;     // Added for display
+  // 대표자 성명은 담지 않는다 — 화면에서 쓰지 않는 개인정보는 브라우저로 내려보내지 않는다.
+  // 2단계 확인(사업자번호 + 대표자 성명)에서 이름은 입력 대조용으로만 쓰인다.
 }
 
 export enum BizCategory {

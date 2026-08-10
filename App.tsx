@@ -8,7 +8,7 @@ import { UserSession } from './types';
 //   왜 필요한가: 세션을 localStorage 에 그대로 넣어 두었더니, bizType(업태)을 추가했을 때
 //   이미 로그인해 둔 브라우저는 계속 옛 세션을 복원해 업태 배지가 비어 있었다.
 //   구조를 바꿀 때마다 고객사가 직접 로그아웃해야 하는 상황은 피해야 한다.
-const SESSION_VERSION = 4;   // 3: bizItem·isYouthOwner·isFemaleOwner / 4: clientType 추가
+const SESSION_VERSION = 5;   // 3: bizItem·isYouthOwner·isFemaleOwner / 4: clientType 추가 / 5: ceoName 제거
 const SESSION_KEY = 'daehan_session';
 
 function App() {
