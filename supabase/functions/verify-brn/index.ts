@@ -28,14 +28,30 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const corsHeaders = {
-  // TODO(도메인 확정 후): fund.daehantax.com 등 실제 서비스 오리진으로 좁힌다.
-  //   다만 CORS 는 브라우저에서만 적용된다 — curl·서버 호출은 막지 못하므로
-  //   실질적인 방어선은 아래 호출 제한(RATE_LIMIT)이다.
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// 허용 오리진 — 서비스 도메인과 로컬 개발 주소만. 목록에 없으면 CORS 헤더를 주지 않아
+// 다른 사이트에 심어놓은 스크립트가 브라우저에서 이 함수를 호출할 수 없다.
+//   ※ CORS 는 브라우저에서만 적용된다. curl·서버에서 직접 호출하는 것은 막지 못하므로
+//     실질적인 방어선은 아래 호출 제한(RATE_LIMIT)이다. CORS 는 보조 수단이다.
+// 환경변수 ALLOWED_ORIGINS(쉼표 구분)로 덮어쓸 수 있다 — 도메인이 바뀌면 재배포 없이 대응.
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://fund.daehantax.com',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+];
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const allowList = ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
+
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin',   // 오리진마다 응답이 달라지므로 캐시가 섞이지 않게 한다
+  };
+  if (allowList.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
+  return headers;
+}
 
 // 호출 제한: 같은 IP 로 1분에 5회까지
 const RATE_LIMIT_COUNT = 5;
@@ -46,10 +62,10 @@ const CLEANUP_PROBABILITY = 0.05;
 
 const YOUTH_AGE = 39;   // 청년 기준 (중소벤처기업부 만 39세 이하)
 
-function json(body: unknown, status = 200): Response {
+function json(req: Request, body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsFor(req), 'Content-Type': 'application/json' },
   });
 }
 
@@ -82,7 +98,7 @@ function ageOf(birthDate: unknown): number | undefined {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsFor(req) });
   }
 
   try {
@@ -113,7 +129,7 @@ Deno.serve(async (req) => {
       // 테이블 미생성 등. 제한을 못 걸었다고 조회 자체를 막지는 않되 로그로 남긴다.
       console.error('[verify-brn] 호출 제한 확인 실패(계속 진행):', countError);
     } else if ((count ?? 0) >= RATE_LIMIT_COUNT) {
-      return json({ found: false, error: 'rate_limited' }, 429);
+      return json(req, { found: false, error: 'rate_limited' }, 429);
     }
 
     await admin.from('verify_attempts').insert({ ip_hash: ipHash });
@@ -126,7 +142,7 @@ Deno.serve(async (req) => {
     // ─────────────────────────────────────────────────────────────────────────
 
     if (digits.length !== 10 || !inputName) {
-      return json({ found: false });
+      return json(req, { found: false });
     }
     // DB에 하이픈 포함(123-45-67890)으로 저장된 경우까지 함께 대조
     const hyphenated = `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
@@ -142,7 +158,7 @@ Deno.serve(async (req) => {
     // 수임 해지(해임)된 거래처는 고객사로 인정하지 않는다
     const match = (data ?? []).find((c: any) => c.customer_type !== '해임') ?? null;
     if (!match) {
-      return json({ found: false });
+      return json(req, { found: false });
     }
 
     // ── 대표자 성명 대조 ──────────────────────────────────────────────────────
@@ -157,7 +173,7 @@ Deno.serve(async (req) => {
     const authenticated = reps.find((p: any) => normalizeName(p?.name) === inputName);
     if (!authenticated) {
       // 번호는 맞지만 이름이 틀린 경우 — 없는 번호와 응답이 완전히 같아야 한다
-      return json({ found: false });
+      return json(req, { found: false });
     }
 
     // ── 대표자 속성 판정 ──────────────────────────────────────────────────────
@@ -175,7 +191,7 @@ Deno.serve(async (req) => {
     const isFemaleOwner = genders.length > 0 ? genders.some((g: string) => g === '여') : undefined;
 
     // 대표자 성명(ceoName)은 응답에 담지 않는다 — 화면에서 쓰지 않는 개인정보다.
-    return json({
+    return json(req, {
       found: true,
       companyName: match.name ?? '',
       clientType: match.client_type ?? '', // 법인 / 개인 / 비사업자 — 사업자 형태 전용 사업 판정용
@@ -187,6 +203,6 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('[verify-brn] 오류:', err);
-    return json({ found: false, error: 'internal_error' }, 500);
+    return json(req, { found: false, error: 'internal_error' }, 500);
   }
 });

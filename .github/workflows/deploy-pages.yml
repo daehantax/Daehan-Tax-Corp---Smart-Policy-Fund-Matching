@@ -31,10 +31,11 @@ jobs:
       # 새 데이터가 매칭 불변식을 깨면 배포를 막고 알림이 온다.
       - run: npm test
 
+      # 커스텀 도메인(fund.daehantax.com)을 쓰므로 base 경로 지정이 필요 없습니다.
+      # (vite.config.ts 참고 — 예전 GITHUB_PAGES 환경변수는 그래서 제거했습니다)
       - run: npm run build
         env:
-          GITHUB_PAGES: 'true'
-          # 수파베이스 연결 정보 (미설정 시 앱은 기존 CSV/구글 스크립트 방식으로 동작)
+          # 수파베이스 연결 정보 (미설정 시 공고 데이터는 CSV 폴백. 고객사 조회는 폴백 없음)
           # anon 키는 공개 가능한 키지만 관리 일관성을 위해 Secrets로 등록
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
