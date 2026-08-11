@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vite-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "homepage-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "serve",
+        "--no-clipboard",
+        "-l",
+        "4173",
+        "C:/Users/User/AppData/Local/Temp/claude/C--Users-User-Documents-GitHub-DH-Daehan-Tax-Corp---Smart-Policy-Fund-Matching/67546b17-baf6-42df-9a70-c9941aede47c/scratchpad/homepage-preview"
+      ],
+      "port": 4173
+    }
+  ]
+}
