@@ -1,10 +1,21 @@
 <!DOCTYPE html>
 <html lang="ko">
   <head>
+    <!-- Google Tag Manager — daehantax.com 과 같은 컨테이너를 쓴다.
+         같은 최상위 도메인(daehantax.com)의 서브도메인이라 GA4 쿠키가 공유되므로,
+         본사이트에서 넘어온 방문이 한 사람의 연속된 세션으로 이어진다. -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-KJGBSJLR');</script>
+    <!-- End Google Tag Manager -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>대한세무법인 - 맞춤형 정책자금 스마트 매칭 시스템</title>
-    <!-- 고객사 전용 페이지 — 검색 결과에 노출되지 않게 한다 (public/robots.txt 와 함께) -->
+    <!-- 고객사 전용 페이지 — 검색 결과에 노출되지 않게 한다.
+         색인 제외는 이 태그가 담당한다. robots.txt 에서 Disallow 로 막으면
+         크롤러가 이 태그를 읽지 못해 오히려 제외가 안 되므로, robots.txt 는 수집을 허용한다. -->
     <meta name="robots" content="noindex, nofollow" />
     <!-- 탭 아이콘 · 홈화면 아이콘 — 회사 로고 심볼(public/logo-symbol.png).
          GitHub Pages 하위 경로에서도 열리도록 './' 상대경로를 쓴다. -->
@@ -19,6 +30,10 @@
     </style>
 </head>
   <body class="bg-slate-50 text-slate-900">
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KJGBSJLR"
+    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
