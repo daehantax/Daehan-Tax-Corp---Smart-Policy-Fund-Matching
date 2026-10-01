@@ -26,3 +26,6 @@ dist-ssr
 # 고객 개인정보 데이터 — 절대 커밋 금지 (비공개 구글 스프레드시트에서만 관리)
 public/data/dhadress*
 *_processed_data_*.csv
+
+# 조사용 임시 데이터 (첨부파일 원본) — 커밋 금지
+.research-data/
