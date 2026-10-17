@@ -128,7 +128,7 @@ describe('중소벤처24', () => {
 
   it('접속 실패해도 예외를 던지지 않고 ok=false', async () => {
     const boom = async () => { throw new Error('ECONNRESET'); };
-    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: boom, log: quiet });
+    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: boom, log: quiet, waitMs: 0 });
     expect(r).toMatchObject({ ok: false, items: [] });
   });
 
@@ -153,6 +153,28 @@ describe('중소벤처24', () => {
     const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: empty, log: quiet });
     expect(r.error).toContain('resultCd=99');
     expect(r.error).toContain('승인되지 않은 키');
+  });
+
+  it('서버 500 이면 조회 기간을 줄여 다시 부르고, 성공하면 그 결과를 쓴다', async () => {
+    const calls: string[] = [];
+    const flaky = async (u: string) => {
+      calls.push(u);
+      return calls.length === 1
+        ? new Response('{"status":500,"error":"Invalid Response Message Format"}', { status: 500 })
+        : new Response(JSON.stringify({ resultCd: '0', data: [{ pblancSeq: 1, pblancNm: '재시도 공고' }] }), { status: 200 });
+    };
+    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: flaky as typeof fetch, log: quiet, waitMs: 0 });
+    expect(r.ok).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(r).not.toHaveProperty('retryable');
+  });
+
+  it('인증키 오류(200 응답)는 재시도하지 않는다', async () => {
+    let n = 0;
+    const denied = async () => { n++; return new Response(JSON.stringify({ resultCd: '9', resultMsg: '허용되지 않은 인증키', data: '' }), { status: 200 }); };
+    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: denied, log: quiet, waitMs: 0 });
+    expect(r.ok).toBe(false);
+    expect(n).toBe(1);
   });
 
   it('ID·제목이 없는 항목은 버린다', () => {
