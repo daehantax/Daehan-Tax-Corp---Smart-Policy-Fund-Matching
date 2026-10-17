@@ -113,9 +113,7 @@ export async function loadManualItems(file, today = new Date().toISOString().sli
 }
 
 // --- 중소벤처24 ------------------------------------------------------------------
-// ⚠ 공개 명세를 이 환경에서 열람하지 못해(사이트가 자동 접근을 막음) 필드 이름을
-//   여러 후보로 받는다. 키를 발급받은 뒤 첫 실행 로그의 "첫 항목 필드"를 보고
-//   아래 후보 목록을 실제 이름으로 좁힐 것. 주소는 SMES24_API_URL 로 바꿀 수 있다.
+// 응답: { resultCd: "0"(정상) | "9"(허용되지 않은 키) | "10"(다른 API 키) …, resultMsg, data: [공고…] }
 
 const pick = (item, keys) => {
   for (const k of keys) {

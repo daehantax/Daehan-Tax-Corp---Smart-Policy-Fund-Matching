@@ -33,8 +33,11 @@ const DROP_EXPIRED = process.env.BIZINFO_KEEP_EXPIRED !== '1';     // 마감 지
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MANUAL_FILE = path.join(ROOT, 'data/manual-grants.json');
-// 중소벤처24 Open API 주소 — 키 발급 화면의 안내와 다르면 SMES24_API_URL 로 덮어쓴다
-const SMES24_URL = process.env.SMES24_API_URL || 'https://www.smes.go.kr/fnct/apiReqst/extPblancInfo';
+// 중소벤처24 「공고정보 API」 (portal.smes.go.kr 안내 페이지, 2026-10-17 확인)
+//   GET ?token=인증키(URL 인코딩)&strDt=yyyyMMdd&endDt=yyyyMMdd&html=yes|no
+//   ※ 옛 주소 www.smes.go.kr/fnct/apiReqst/extPblancInfo 는 새 포털 키를 "허용되지 않은 인증키"로 거부한다
+// 주소가 바뀌면 저장소 시크릿 SMES24_API_URL 로 덮어쓸 수 있다.
+const SMES24_URL = process.env.SMES24_API_URL || 'https://portal.smes.go.kr/ione-gw/api/pblanc/list';
 const OUT_CSV = path.join(ROOT, 'public/data/policy_fund_latest.csv');
 const OUT_META = path.join(ROOT, 'public/data/grants_meta.json');
 
