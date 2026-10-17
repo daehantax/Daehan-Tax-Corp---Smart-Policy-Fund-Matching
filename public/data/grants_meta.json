@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-10-17T00:26:51.309Z",
+  "syncedAt": "2026-10-17T00:28:42.959Z",
   "count": 1439,
   "expiredDropped": 0,
   "source": "bizinfo-api",
@@ -7,7 +7,8 @@
     "bizinfo": 1437,
     "manual": 2,
     "smes24": "failed",
-    "duplicatesDropped": 0
+    "duplicatesDropped": 0,
+    "smes24Error": "목록을 찾지 못함. 최상위 키: resultCd,data,resultMsg"
   },
   "supabaseSynced": true
 }
