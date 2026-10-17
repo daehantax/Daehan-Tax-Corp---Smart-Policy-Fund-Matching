@@ -1,12 +1,12 @@
 {
-  "syncedAt": "2026-10-17T00:08:33.567Z",
+  "syncedAt": "2026-10-17T00:26:51.309Z",
   "count": 1439,
   "expiredDropped": 0,
   "source": "bizinfo-api",
   "sources": {
     "bizinfo": 1437,
     "manual": 2,
-    "smes24": "skipped",
+    "smes24": "failed",
     "duplicatesDropped": 0
   },
   "supabaseSynced": true
