@@ -100,7 +100,7 @@ describe('수동 등록 파일', () => {
   it('총사업비를 지원금액으로 잘못 뽑지 않는다', async () => {
     const items = await loadManualItems(MANUAL_FILE, '2026-10-17');
     const byId = Object.fromEntries(items.map(it => [it.pblancId, it]));
-    expect(extractSupportAmount(byId['MANUAL-gwangju-gg-2026-guarantee'].bsnsSumryCn)).toBeNull();
+    expect(extractSupportAmount(byId['MANUAL-gwangju-gg-2026-guarantee'].bsnsSumryCn)).toBe('3억 원');   // 244억 원(총 보증규모)이 아니라 업체당 한도
     expect(extractSupportAmount(byId['MANUAL-yongin-2026-interest-subsidy'].bsnsSumryCn)).toBe('3억원');
     // '여성기업·우수기업 우대'는 여성기업 전용이 아니다
     const y = byId['MANUAL-yongin-2026-interest-subsidy'];
