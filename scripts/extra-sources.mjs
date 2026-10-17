@@ -125,25 +125,40 @@ const pick = (item, keys) => {
   return '';
 };
 
+// 응답 필드는 중소벤처24 「공고정보 API」 안내 페이지(2026-10-17 확인)의 응답 명세를 따른다.
+//   pblancSeq 공고SEQ / pblancNm 공고명 / detailBsnsNm 세부사업명 / creatDt 등록일(yyyy-MM-dd HH:mm:ss)
+//   pblancBgnDt·pblancEndDt 신청 시작·마감(yyyy-MM-dd) / pblancDtlUrl 상세 URL
+//   policyCnts 사업개요 · sportMg 지원규모 · sportCnts 지원내용 · sportTrget 지원대상 (HTML 포함)
+//   sportInsttNm 지원기관명 / cntcInsttNm 연계기관명 / sportType 지원유형 / areaNm 지역명('|' 구분)
 export function smes24ToItem(it) {
-  const id = pick(it, ['pblancSeq', 'pblancId', 'pblancSn', 'seq', 'id']);
-  const title = pick(it, ['pblancNm', 'pblancTitle', 'title', 'sj', 'bsnsNm']);
+  const id = pick(it, ['pblancSeq']);
+  const title = pick(it, ['pblancNm']);
   if (!id || !title) return null;
-  const start = pick(it, ['pblancBgnDt', 'rceptBgnDt', 'reqstBgnDt', 'startDate', 'bgnDt']);
-  const end = pick(it, ['pblancEndDt', 'rceptEndDt', 'reqstEndDt', 'endDate', 'endDt']);
+  const start = pick(it, ['pblancBgnDt']);
+  const end = pick(it, ['pblancEndDt']);
+  const detail = pick(it, ['detailBsnsNm']);
+  // 본문은 사업개요 → 지원대상 → 지원내용·규모 순으로 붙인다. 동기화 쪽 자격 판정이
+  // "첫 ☞ 구간 = 지원대상"으로 읽으므로 기업마당과 같은 표시를 넣어 둔다.
+  const body = [
+    pick(it, ['policyCnts']),
+    pick(it, ['sportTrget']) && `☞ 지원대상 ${pick(it, ['sportTrget'])}`,
+    pick(it, ['sportCnts']) && `☞ 지원내용 ${pick(it, ['sportCnts'])}`,
+    pick(it, ['sportMg']) && `지원규모 ${pick(it, ['sportMg'])}`,
+  ].filter(Boolean).join(' ');
   return {
     pblancId: `${SOURCE_PREFIX.smes24}${id}`,
-    pblancNm: title,
-    reqstBeginEndDe: start || end ? `${start} ~ ${end}` : pick(it, ['rceptPd', 'period']),
-    pblancUrl: pick(it, ['pblancDtlUrl', 'detailUrl', 'url', 'link']),
-    creatPnttm: pick(it, ['registDt', 'creatDt', 'regDt', 'frstRegistPnttm']),
-    jrsdInsttNm: pick(it, ['jrsdInsttNm', 'mnstNm', 'ministry']) || '중소벤처기업부',
-    excInsttNm: pick(it, ['sportInsttNm', 'excInsttNm', 'operInsttNm', 'insttNm', 'agency']),
-    pldirSportRealmLclasCodeNm: pick(it, ['sportRealmNm', 'bsnsSeNm', 'category']) || '기타',
+    pblancNm: detail && !title.includes(detail) ? `${title} (${detail})` : title,
+    reqstBeginEndDe: start || end ? `${start} ~ ${end}` : '',
+    pblancUrl: pick(it, ['pblancDtlUrl']),
+    creatPnttm: pick(it, ['creatDt']).slice(0, 10),
+    jrsdInsttNm: pick(it, ['cntcInsttNm']) || '중소벤처기업부',
+    excInsttNm: pick(it, ['sportInsttNm']),
+    pldirSportRealmLclasCodeNm: pick(it, ['sportType', 'bizType']) || '기타',
     pldirSportRealmMlsfcCodeNm: '',
-    trgetNm: pick(it, ['sportTrgetNm', 'trgetNm', 'target']),
-    bsnsSumryCn: pick(it, ['pblancCn', 'bsnsSumry', 'summary', 'cn']),
-    hashtags: '',
+    trgetNm: '',
+    bsnsSumryCn: body,
+    // 지역명('서울|경기')을 해시태그로 넘겨 기업마당 공고와 같은 지역 판정을 받게 한다
+    hashtags: pick(it, ['areaNm']).split('|').map(s => s.trim()).filter(Boolean).join(','),
     inqireCo: 0,
   };
 }
