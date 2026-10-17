@@ -128,12 +128,25 @@ const pick = (item, keys) => {
 //   pblancBgnDt·pblancEndDt 신청 시작·마감(yyyy-MM-dd) / pblancDtlUrl 상세 URL
 //   policyCnts 사업개요 · sportMg 지원규모 · sportCnts 지원내용 · sportTrget 지원대상 (HTML 포함)
 //   sportInsttNm 지원기관명 / cntcInsttNm 연계기관명 / sportType 지원유형 / areaNm 지역명('|' 구분)
+/**
+ * 날짜 문자열 정규화 → YYYY-MM-DD (못 읽으면 빈 문자열).
+ * 명세는 'yyyy-MM-dd HH:mm:ss' 지만 실제로 '20260130170000' 처럼 구분자 없이 오는 값이 있어
+ * slice 만 하면 '2026013017' 이 되어 DB 업서트 전체가 실패했다(2026-10-17).
+ */
+export function toYmd(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (d.length < 8) return '';
+  const [y, m, day] = [d.slice(0, 4), d.slice(4, 6), d.slice(6, 8)];
+  if (+m < 1 || +m > 12 || +day < 1 || +day > 31) return '';
+  return `${y}-${m}-${day}`;
+}
+
 export function smes24ToItem(it) {
   const id = pick(it, ['pblancSeq']);
   const title = pick(it, ['pblancNm']);
   if (!id || !title) return null;
-  const start = pick(it, ['pblancBgnDt']);
-  const end = pick(it, ['pblancEndDt']);
+  const start = toYmd(pick(it, ['pblancBgnDt']));
+  const end = toYmd(pick(it, ['pblancEndDt']));
   const detail = pick(it, ['detailBsnsNm']);
   // 본문은 사업개요 → 지원대상 → 지원내용·규모 순으로 붙인다. 동기화 쪽 자격 판정이
   // "첫 ☞ 구간 = 지원대상"으로 읽으므로 기업마당과 같은 표시를 넣어 둔다.
@@ -148,7 +161,7 @@ export function smes24ToItem(it) {
     pblancNm: detail && !title.includes(detail) ? `${title} (${detail})` : title,
     reqstBeginEndDe: start || end ? `${start} ~ ${end}` : '',
     pblancUrl: pick(it, ['pblancDtlUrl']),
-    creatPnttm: pick(it, ['creatDt']).slice(0, 10),
+    creatPnttm: toYmd(pick(it, ['creatDt'])),
     jrsdInsttNm: pick(it, ['cntcInsttNm']) || '중소벤처기업부',
     excInsttNm: pick(it, ['sportInsttNm']),
     pldirSportRealmLclasCodeNm: pick(it, ['sportType', 'bizType']) || '기타',
