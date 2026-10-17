@@ -116,13 +116,14 @@ describe('중소벤처24', () => {
 
   it('응답을 기업마당 모양으로 바꾸고 SMES24- 접두어를 붙인다', async () => {
     const fake = async () => new Response(JSON.stringify({ data: [
-      { pblancSeq: '123', pblancNm: '2026년 수출바우처 추가 모집', pblancBgnDt: '2026-10-01', pblancEndDt: '2026-10-31', sportInsttNm: '중소벤처기업진흥공단', pblancDtlUrl: 'https://www.smes.go.kr/x' },
+      { pblancSeq: 123, pblancNm: '2026년 수출바우처 추가 모집', pblancBgnDt: '2026-10-01', pblancEndDt: '2026-10-31', creatDt: '2026-09-30 10:00:00', sportInsttNm: '중소벤처기업진흥공단', pblancDtlUrl: 'https://www.smes.go.kr/x', areaNm: '서울|경기', sportTrget: '<p>수출 중소기업</p>' },
       { pblancNm: 'ID 없는 항목' },
     ] }), { status: 200 });
     const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: fake, log: quiet });
     expect(r.ok).toBe(true);
     expect(r.items).toHaveLength(1);
-    expect(r.items[0]).toMatchObject({ pblancId: 'SMES24-123', excInsttNm: '중소벤처기업진흥공단', reqstBeginEndDe: '2026-10-01 ~ 2026-10-31' });
+    expect(r.items[0]).toMatchObject({ pblancId: 'SMES24-123', excInsttNm: '중소벤처기업진흥공단', reqstBeginEndDe: '2026-10-01 ~ 2026-10-31', creatPnttm: '2026-09-30', hashtags: '서울,경기' });
+    expect(r.items[0].bsnsSumryCn).toContain('☞ 지원대상');
   });
 
   it('접속 실패해도 예외를 던지지 않고 ok=false', async () => {
