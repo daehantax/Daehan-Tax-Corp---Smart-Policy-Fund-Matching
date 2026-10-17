@@ -185,19 +185,42 @@ export function redact(text, secret) {
   return text.split(secret).join('***').split(encodeURIComponent(secret)).join('***');
 }
 
-export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fetch, log = console }) {
+/**
+ * 중소벤처24는 같은 요청에도 가끔 HTTP 500("Invalid Response Message Format")을 돌려준다
+ * (2026-10-17 연속 2회 관찰 — 직전 같은 요청은 정상). 서버 쪽 오류·접속 오류면
+ * 조회 기간을 줄여 가며 다시 부른다. 인증키 오류 같은 정상 응답(200)은 재시도하지 않는다.
+ */
+export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fetch, log = console, retryDays = [30, 14], waitMs = 5000 }) {
   if (!apiKey) {
     log.log('[extra] SMES24_API_KEY 미설정 → 중소벤처24 건너뜀');
-    return { items: [], ok: true, skipped: true };
+    return { items: [], ok: true, skipped: true, error: undefined, received: 0, fields: [] };
   }
+  const plan = [days, ...retryDays.filter(d => d < days)];
+  let last;
+  for (let i = 0; i < plan.length; i++) {
+    if (i > 0) {
+      log.warn(`[extra] 중소벤처24 재시도 ${i}/${plan.length - 1} (조회기간 ${plan[i]}일): ${last.error}`);
+      if (waitMs) await new Promise(r => setTimeout(r, waitMs));
+    }
+    last = await fetchSmes24Once({ apiKey, url, days: plan[i], fetchImpl, log });
+    if (last.ok || !last.retryable) break;
+  }
+  if (!last.ok) log.warn('[extra] ⚠ 중소벤처24 실패 (기업마당만 반영):', last.error);
+  const { retryable, ...result } = last;
+  return result;
+}
+
+async function fetchSmes24Once({ apiKey, url, days, fetchImpl, log }) {
   const end = new Date();
   const start = new Date(end.getTime() - days * 86400_000);
   const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
   const sep = url.includes('?') ? '&' : '?';
   const q = `token=${encodeURIComponent(apiKey)}&strDt=${ymd(start)}&endDt=${ymd(end)}&html=no`;
+  let retryable = true;  // 접속 오류·5xx 는 재시도, 그 외(200인데 오류 코드 등)는 바로 실패
   try {
     const res = await fetchImpl(`${url}${sep}${q}`, { signal: AbortSignal.timeout(60_000) });
     const text = await res.text();
+    retryable = res.status >= 500;
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
     const data = JSON.parse(text);
     const list = findList(data);
@@ -219,8 +242,7 @@ export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fet
     // 추가 출처 실패는 전체 동기화를 멈추지 않는다 — 기업마당 데이터는 그대로 반영
     // 실패 이유는 grants_meta.json 에도 남긴다(Actions 로그를 못 볼 때 원인 확인용). 키는 가린다.
     const error = redact(String(err.cause?.code || err.message || err), apiKey).slice(0, 400);
-    log.warn('[extra] ⚠ 중소벤처24 실패 (기업마당만 반영):', error);
-    return { items: [], ok: false, skipped: false, error };
+    return { items: [], ok: false, skipped: false, error, retryable };
   }
 }
 
