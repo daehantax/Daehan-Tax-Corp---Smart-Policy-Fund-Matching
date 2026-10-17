@@ -616,6 +616,8 @@ async function main() {
     if (detailUrl && detailUrl.startsWith('/')) detailUrl = `https://www.bizinfo.go.kr${detailUrl}`;
 
     const registered = pick(item, ['creatPnttm', 'creatDe', 'registDe', 'pubDate']).slice(0, 10).replace(/\./g, '-');
+    // DB date 컬럼에 넣을 수 없는 값이면 비운다 — 한 건 때문에 업서트 전체가 실패하지 않도록
+    const registeredOk = /^\d{4}-\d{2}-\d{2}$/.test(registered) ? registered : '';
 
     const department = pick(item, ['jrsdInsttNm', 'jrsdInsttNmKr', 'department']) || '관계부처'; // 소관부처
     const agency = pick(item, ['excInsttNm', 'operInsttNm', 'agency']);                          // 사업수행기관
@@ -663,7 +665,7 @@ async function main() {
       sub_category: subCategory || null,
       start_date: period.start || null,   // date 컬럼은 빈 문자열 대신 NULL
       end_date: period.end || null,
-      registration_date: registered || null,
+      registration_date: registeredOk || null,
       period_text: periodText || null,
       detail_url: detailUrl || null,
       target: target || null,

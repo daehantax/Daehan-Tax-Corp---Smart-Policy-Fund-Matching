@@ -188,3 +188,15 @@ describe('출처별 비활성화 보호', () => {
     expect(protectedPrefixes({ manual: { ok: true }, smes24: { ok: true } })).toEqual([]);
   });
 });
+
+describe('날짜 정규화', () => {
+  it('구분자 없는 값·시각 포함 값을 YYYY-MM-DD 로 바꾸고, 못 읽으면 비운다', async () => {
+    const { toYmd } = await import('../scripts/extra-sources.mjs');
+    expect(toYmd('20260130170000')).toBe('2026-01-30');
+    expect(toYmd('2026-01-30 17:00:00')).toBe('2026-01-30');
+    expect(toYmd('2026.01.30')).toBe('2026-01-30');
+    expect(toYmd('2026013')).toBe('');
+    expect(toYmd('20261340')).toBe('');
+    expect(toYmd('')).toBe('');
+  });
+});
