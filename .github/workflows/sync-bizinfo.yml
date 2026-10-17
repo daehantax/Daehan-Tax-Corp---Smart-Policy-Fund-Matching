@@ -37,6 +37,9 @@ jobs:
           # service_role 키는 절대 코드에 넣지 말고 반드시 Secrets로만 관리
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # 중소벤처24 공고 API (선택, 미설정 시 건너뜀). 주소가 기본값과 다르면 SMES24_API_URL 도 등록
+          SMES24_API_KEY: ${{ secrets.SMES24_API_KEY }}
+          SMES24_API_URL: ${{ secrets.SMES24_API_URL }}
         run: node scripts/sync-bizinfo.mjs
 
       - name: Commit & push if data changed

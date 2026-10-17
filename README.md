@@ -4,6 +4,9 @@
 골라 보여주는 고객사 전용 서비스입니다.
 
 - 공고 데이터: 기업마당(Bizinfo) 오픈 API → 매일 새벽 자동 동기화
+  - + 수동 등록 공고(`data/manual-grants.json`) — 기업마당에 안 올라오는 시·군 육성자금
+  - + 중소벤처24 공고 API (선택, 저장소 시크릿 `SMES24_API_KEY` 등록 시)
+  - 추가 출처 공고가 기업마당과 겹치면 기업마당 쪽만 남는다
 - 고객사 정보: 공용 DB(`clients`)를 Edge Function으로만 조회 — 고객 명단은 브라우저로 내려가지 않음
 - 배포: GitHub Pages (main 브랜치 푸시 시 자동)
 
@@ -33,6 +36,7 @@ npm test
 | `services/smartTags.test.ts` | 관심 키워드 태그의 오탐 방지 |
 | `services/syncParity.test.ts` | **앱(TS)과 동기화 스크립트(JS)의 판정이 일치하는지** + 지원금액 추출 |
 | `services/matchingGolden.test.ts` | 커밋된 공고 스냅샷으로 불변식 검증 (부적격 공고 0건 등) |
+| `services/extraSources.test.ts` | 추가 출처 중복 제거, 수동 공고 지역 판정, 접속 실패 시 공고 보호 |
 
 `syncParity`가 특히 중요합니다. 동기화 스크립트는 Node 단독 실행이라 앱의 TS 모듈을
 불러올 수 없어 같은 규칙을 복제해 두고 있는데, 한쪽만 고치면 DB 값과 화면 계산이
@@ -50,11 +54,25 @@ services/csvService.ts       공고 로드(수파베이스 → 구글시트 → 
 services/mockDb.ts           고객사 확인 (사업자번호 + 대표자 성명 → Edge Function. 폴백 없음)
 data/administrative-divisions.json  행정구역 사전 (scripts/gen-divisions.mjs 로 생성)
 scripts/sync-bizinfo.mjs     기업마당 API → CSV + 수파베이스 업서트 (GitHub Actions)
+scripts/extra-sources.mjs    추가 출처(수동 등록·중소벤처24) 읽기 + 기업마당과 중복 제거
+data/manual-grants.json      사람이 등록하는 시·군 공고 (기업마당 누락분)
 supabase/functions/verify-brn 사업자번호 대조 Edge Function
 ```
 
 행정구역이 개편되면 [행정표준코드관리시스템](https://www.code.go.kr/stdcodesrch/codeAllDownloadL.do)에서
 **법정동코드 전체자료**를 받아 `node scripts/gen-divisions.mjs`를 다시 실행하면 됩니다.
+
+## 공고 출처 운영 메모
+
+| 출처 | 공고 ID | 상태 |
+|---|---|---|
+| 기업마당 API | `PBLN_…` | 매일 자동 |
+| 수동 등록 | `MANUAL-…` | `data/manual-grants.json` 에 추가 → 다음 새벽 반영 |
+| 중소벤처24 API | `SMES24-…` | 시크릿 `SMES24_API_KEY` 등록 시 자동. 첫 실행 로그의 "첫 항목 필드"를 보고 `scripts/extra-sources.mjs` 의 필드 후보를 확인할 것 |
+
+- 성남·용인 시청 누리집은 robots.txt 로 자동 수집을 막고 있어 긁지 않는다. 두 시의 공고는 대부분 기업마당에 올라온다(2026-10 기준 성남 10·용인 12건). 빠진 것만 수동 등록.
+- 경기 광주시는 기업마당 등록이 거의 없다(2026-10 기준 0건) — 시 고시공고를 연초에 확인해 수동 등록.
+- 어느 출처든 하루 접속이 실패하면 그 출처의 기존 공고는 숨기지 않는다(ID 접두어로 구분).
 
 ## 관련 저장소
 

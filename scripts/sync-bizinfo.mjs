@@ -20,6 +20,7 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SOURCE_PREFIX, dropDuplicates, fetchSmes24Items, loadManualItems, protectedPrefixes } from './extra-sources.mjs';
 
 const API_URL = 'https://www.bizinfo.go.kr/uss/rss/bizinfoApi.do';
 const API_KEY = process.env.BIZINFO_API_KEY;
@@ -31,6 +32,9 @@ const SEARCH_CNT = Number(process.env.BIZINFO_SEARCH_CNT || 1000); // 1회 조�
 const DROP_EXPIRED = process.env.BIZINFO_KEEP_EXPIRED !== '1';     // 마감 지난 공고 제외(기본)
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MANUAL_FILE = path.join(ROOT, 'data/manual-grants.json');
+// 중소벤처24 Open API 주소 — 키 발급 화면의 안내와 다르면 SMES24_API_URL 로 덮어쓴다
+const SMES24_URL = process.env.SMES24_API_URL || 'https://www.smes.go.kr/fnct/apiReqst/extPblancInfo';
 const OUT_CSV = path.join(ROOT, 'public/data/policy_fund_latest.csv');
 const OUT_META = path.join(ROOT, 'public/data/grants_meta.json');
 
@@ -136,10 +140,19 @@ function expandSigunguShort(token, regionCodes) {
   const names = new Set(pool.map(e => e.name));
   return names.size === 1 ? pool[0].name : null;
 }
+// 시도 이름을 품은 시·군 이름 — '경기'가 함께 있으면 지우고 시도를 찾는다
+// ("[경기] 광주시 …" 가 광주광역시로도 잡히던 문제). services/geo.ts 와 같은 규칙.
+const AMBIGUOUS_SIGUNGU = [{ name: '광주시', sido: '경기' }];
+function maskAmbiguousSigungu(text) {
+  let t = text;
+  for (const { name, sido } of AMBIGUOUS_SIGUNGU) if (t.includes(sido)) t = t.split(name).join(' ');
+  return t;
+}
 function pickSidoCodes(text) {
   if (!text) return [];
+  const t = maskAmbiguousSigungu(text);
   const found = new Set();
-  for (const { token, codes } of SIDO_TOKENS) if (text.includes(token)) for (const c of codes) found.add(c);
+  for (const { token, codes } of SIDO_TOKENS) if (t.includes(token)) for (const c of codes) found.add(c);
   return [...found];
 }
 function detectZone(text) {
@@ -413,7 +426,7 @@ function extractSupportAmount(summaryFull) {
  * policy_grants 테이블 업서트 (수파베이스 REST API 직접 호출 — 별도 패키지 불필요)
  * 실패 시 예외를 던지지 않고 false 반환 (CSV 폴백이 있으므로 전체 작업은 계속)
  */
-async function syncToSupabase(records) {
+async function syncToSupabase(records, protectPrefixes = []) {
   const base = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   if (!base || !key) {
@@ -446,8 +459,10 @@ async function syncToSupabase(records) {
     }
 
     // 2) 이번 동기화에 나타나지 않은 공고는 active=false 로 숨김 (삭제 안 함)
+    //    단, 이번에 접속이 실패한 추가 출처(중소벤처24 등)의 공고는 건드리지 않는다
+    const keep = protectPrefixes.map(p => `&pblanc_id=not.like.${encodeURIComponent(p)}*`).join('');
     const res = await fetch(
-      `${base}/rest/v1/policy_grants?synced_at=lt.${encodeURIComponent(runStart)}&active=eq.true`,
+      `${base}/rest/v1/policy_grants?synced_at=lt.${encodeURIComponent(runStart)}&active=eq.true${keep}`,
       { method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ active: false }) },
     );
     if (!res.ok) throw new Error(`비활성화 실패 HTTP ${res.status}: ${(await res.text()).slice(0, 500)}`);
@@ -542,6 +557,25 @@ async function main() {
 
   // 첫 항목의 실제 필드명을 로그로 남겨 스펙 검증에 활용
   console.log(`[sync-bizinfo] 수신 ${items.length}건. 첫 항목 필드:`, Object.keys(items[0]).join(', '));
+
+  // 추가 출처 (수동 등록 + 중소벤처24) — 기업마당과 겹치는 공고는 빼고 합친다.
+  // 수동 파일이 깨졌으면 사람이 고쳐야 하므로 여기서 멈춘다(조용히 넘어가면 공고가 사라진 걸 모른다).
+  const manualItems = await loadManualItems(MANUAL_FILE);
+  const smes24 = await fetchSmes24Items({ apiKey: process.env.SMES24_API_KEY, url: SMES24_URL });
+  const sourceResults = { manual: { ok: true }, smes24 };
+  const { kept: extraKept, dropped: extraDropped } = dropDuplicates(items, [...manualItems, ...smes24.items]);
+  const sourceCount = (prefix) => extraKept.filter(it => it.pblancId.startsWith(prefix)).length;
+  const sources = {
+    bizinfo: items.length,
+    manual: sourceCount(SOURCE_PREFIX.manual),
+    smes24: smes24.skipped ? 'skipped' : (smes24.ok ? sourceCount(SOURCE_PREFIX.smes24) : 'failed'),
+    duplicatesDropped: extraDropped.length,
+  };
+  console.log('[sync-bizinfo] 추가 출처:', JSON.stringify(sources));
+  if (extraDropped.length > 0) {
+    console.log('[sync-bizinfo] 기업마당과 겹쳐 뺀 추가 공고:', extraDropped.map(it => it.pblancNm).join(' / ').slice(0, 1000));
+  }
+  items = [...items, ...extraKept];
 
   // 행정구역 사전 로드 (앱의 services/geo.ts 와 같은 파일 — 복사본을 두면 반드시 어긋난다)
   const divisions = JSON.parse(await readFile(path.join(ROOT, 'data/administrative-divisions.json'), 'utf8'));
@@ -644,11 +678,11 @@ async function main() {
   await writeFile(OUT_CSV, csv, 'utf8');
 
   // 수파베이스에도 업서트 (환경변수 미설정/실패 시 false — CSV 폴백으로 서비스 유지)
-  const supabaseSynced = await syncToSupabase(grantRecords);
+  const supabaseSynced = await syncToSupabase(grantRecords, protectedPrefixes(sourceResults));
 
   await writeFile(
     OUT_META,
-    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api', supabaseSynced }, null, 2),
+    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api', sources, supabaseSynced }, null, 2),
     'utf8',
   );
 

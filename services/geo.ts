@@ -49,11 +49,30 @@ const SIDO_TOKENS: Array<{ token: string; codes: string[] }> = [
 /** 텍스트에서 앱 지역코드를 추출 (전국 판정은 하지 않음) */
 export function pickSidoCodes(text: string): string[] {
   if (!text) return [];
+  const t = maskAmbiguousSigungu(text);
   const found = new Set<string>();
   for (const { token, codes } of SIDO_TOKENS) {
-    if (text.includes(token)) for (const c of codes) found.add(c);
+    if (t.includes(token)) for (const c of codes) found.add(c);
   }
   return [...found];
+}
+
+/**
+ * 시도 이름을 품고 있는 시·군 이름을 지운 뒤 시도를 찾는다.
+ * 경기도 광주시는 '광주'를 포함해서 "[경기] 광주시 특례보증" 공고가
+ * 경기 + 광주광역시 두 지역 공고로 잡혔다. 같은 텍스트에 '경기'가 있을 때만
+ * 지운다 — 경기 언급 없이 '광주시'라고만 쓰면 광주광역시를 뜻하는 경우가 많다.
+ * ※ scripts/sync-bizinfo.mjs 의 같은 함수와 함께 수정할 것
+ */
+const AMBIGUOUS_SIGUNGU: Array<{ name: string; sido: string }> = [
+  { name: '광주시', sido: '경기' },
+];
+function maskAmbiguousSigungu(text: string): string {
+  let t = text;
+  for (const { name, sido } of AMBIGUOUS_SIGUNGU) {
+    if (t.includes(sido)) t = t.split(name).join(' ');
+  }
+  return t;
 }
 
 /** 텍스트의 권역 표현을 찾아 지역코드로 펼친다. exclude형 권역은 이름 그대로 돌려준다 */
