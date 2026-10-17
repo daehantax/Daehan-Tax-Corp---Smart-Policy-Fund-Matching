@@ -139,6 +139,21 @@ describe('중소벤처24', () => {
     expect(r.error).not.toContain('SECRET123');
   });
 
+  it('{resultCd, data:{…배열}} 모양에서도 목록을 찾는다', async () => {
+    const nested = async () => new Response(JSON.stringify({ resultCd: '0', resultMsg: 'OK', data: { list: [
+      { pblancSeq: '9', pblancNm: '중첩 응답 공고' },
+    ] } }), { status: 200 });
+    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: nested, log: quiet });
+    expect(r.items.map(i => i.pblancId)).toEqual(['SMES24-9']);
+  });
+
+  it('목록이 없으면 결과 코드·메시지를 실패 이유에 담는다', async () => {
+    const empty = async () => new Response(JSON.stringify({ resultCd: '99', resultMsg: '승인되지 않은 키', data: null }), { status: 200 });
+    const r = await fetchSmes24Items({ apiKey: 'k', url: 'https://example.invalid', fetchImpl: empty, log: quiet });
+    expect(r.error).toContain('resultCd=99');
+    expect(r.error).toContain('승인되지 않은 키');
+  });
+
   it('ID·제목이 없는 항목은 버린다', () => {
     expect(smes24ToItem({ pblancNm: '제목만' })).toBeNull();
   });
