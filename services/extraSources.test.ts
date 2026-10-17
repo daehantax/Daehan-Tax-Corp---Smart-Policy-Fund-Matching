@@ -131,6 +131,14 @@ describe('중소벤처24', () => {
     expect(r).toMatchObject({ ok: false, items: [] });
   });
 
+  it('실패 이유를 남기되 키는 가린다 (결과 파일이 공개 저장소에 올라간다)', async () => {
+    const leak = async () => new Response('invalid token SECRET123', { status: 401 });
+    const r = await fetchSmes24Items({ apiKey: 'SECRET123', url: 'https://example.invalid', fetchImpl: leak, log: quiet });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('401');
+    expect(r.error).not.toContain('SECRET123');
+  });
+
   it('ID·제목이 없는 항목은 버린다', () => {
     expect(smes24ToItem({ pblancNm: '제목만' })).toBeNull();
   });

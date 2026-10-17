@@ -570,6 +570,9 @@ async function main() {
     manual: sourceCount(SOURCE_PREFIX.manual),
     smes24: smes24.skipped ? 'skipped' : (smes24.ok ? sourceCount(SOURCE_PREFIX.smes24) : 'failed'),
     duplicatesDropped: extraDropped.length,
+    // 진단용 — 실패 이유 / 성공 시 수신 건수와 응답 필드 이름 (필드 후보 확정에 쓴다)
+    ...(smes24.error ? { smes24Error: smes24.error } : {}),
+    ...(smes24.ok && !smes24.skipped ? { smes24Received: smes24.received, smes24Fields: smes24.fields } : {}),
   };
   console.log('[sync-bizinfo] 추가 출처:', JSON.stringify(sources));
   if (extraDropped.length > 0) {
