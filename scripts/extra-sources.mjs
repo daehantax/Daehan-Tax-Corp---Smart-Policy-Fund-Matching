@@ -148,6 +148,12 @@ export function smes24ToItem(it) {
   };
 }
 
+/** 오류 문구에 키가 섞여 나와도 결과 파일(공개 저장소)에 남지 않게 가린다 */
+export function redact(text, secret) {
+  if (!secret) return text;
+  return text.split(secret).join('***').split(encodeURIComponent(secret)).join('***');
+}
+
 export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fetch, log = console }) {
   if (!apiKey) {
     log.log('[extra] SMES24_API_KEY 미설정 → 중소벤처24 건너뜀');
@@ -165,14 +171,17 @@ export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fet
     const data = JSON.parse(text);
     const list = data?.data ?? data?.items ?? data?.item ?? data?.body?.items ?? data?.result ?? (Array.isArray(data) ? data : null);
     if (!Array.isArray(list)) throw new Error(`목록을 찾지 못함. 최상위 키: ${Object.keys(data || {}).join(',')}`);
-    if (list[0]) log.log('[extra] 중소벤처24 첫 항목 필드:', Object.keys(list[0]).join(', '));
+    const fields = list[0] ? Object.keys(list[0]) : [];
+    if (list[0]) log.log('[extra] 중소벤처24 첫 항목 필드:', fields.join(', '));
     const items = list.map(smes24ToItem).filter(Boolean);
     log.log(`[extra] 중소벤처24 수신 ${list.length}건 → 변환 ${items.length}건`);
-    return { items, ok: true, skipped: false };
+    return { items, ok: true, skipped: false, received: list.length, fields };
   } catch (err) {
     // 추가 출처 실패는 전체 동기화를 멈추지 않는다 — 기업마당 데이터는 그대로 반영
-    log.warn('[extra] ⚠ 중소벤처24 실패 (기업마당만 반영):', err.message || err);
-    return { items: [], ok: false, skipped: false };
+    // 실패 이유는 grants_meta.json 에도 남긴다(Actions 로그를 못 볼 때 원인 확인용). 키는 가린다.
+    const error = redact(String(err.cause?.code || err.message || err), apiKey).slice(0, 400);
+    log.warn('[extra] ⚠ 중소벤처24 실패 (기업마당만 반영):', error);
+    return { items: [], ok: false, skipped: false, error };
   }
 }
 
