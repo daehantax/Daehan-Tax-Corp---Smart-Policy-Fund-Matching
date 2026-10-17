@@ -59,6 +59,9 @@ function stripHtml(s) {
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&').replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    // 제어문자 제거 — 특히 \u0000 은 PostgreSQL text 에 저장되지 않아 업서트 전체가 실패한다
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -474,9 +477,12 @@ async function syncToSupabase(records, protectPrefixes = []) {
     return true;
   } catch (err) {
     console.error('[sync-bizinfo] ⚠ 수파베이스 업로드 실패 (앱은 CSV 폴백으로 계속 동작):', err.message || err);
+    // Actions 로그를 못 볼 때 원인 확인용으로 grants_meta.json 에도 남긴다 (키는 오류 문구에 들어가지 않는다)
+    lastSupabaseError = String(err.message || err).replaceAll(key, '***').slice(0, 500);
     return false;
   }
 }
+let lastSupabaseError = null;
 
 // --- 메인 --------------------------------------------------------------------
 
@@ -688,7 +694,7 @@ async function main() {
 
   await writeFile(
     OUT_META,
-    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api', sources, supabaseSynced }, null, 2),
+    JSON.stringify({ syncedAt: new Date().toISOString(), count: rows.length, expiredDropped: expired, source: 'bizinfo-api', sources, supabaseSynced, ...(lastSupabaseError ? { supabaseError: lastSupabaseError } : {}) }, null, 2),
     'utf8',
   );
 
