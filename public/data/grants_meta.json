@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-10-17T00:57:35.433Z",
+  "syncedAt": "2026-10-17T00:59:27.004Z",
   "count": 1540,
   "expiredDropped": 1324,
   "source": "bizinfo-api",
@@ -73,6 +73,5 @@
       "pblancFileNm"
     ]
   },
-  "supabaseSynced": false,
-  "supabaseError": "업서트 실패 HTTP 400: {\"code\":\"22008\",\"details\":null,\"hint\":\"Perhaps you need a different \\\"datestyle\\\" setting.\",\"message\":\"date/time field value out of range: \\\"2026013017\\\"\"}"
+  "supabaseSynced": true
 }
