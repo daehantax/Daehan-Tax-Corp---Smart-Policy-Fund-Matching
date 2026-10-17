@@ -148,6 +148,24 @@ export function smes24ToItem(it) {
   };
 }
 
+/**
+ * 응답에서 공고 배열을 찾는다. data 가 배열이면 그대로, 객체면 그 안의 첫 배열
+ * (예: data.list / data.items / data.pblancList). 응답 명세를 확인하면 좁힐 것.
+ */
+export function findList(data) {
+  if (Array.isArray(data)) return data;
+  for (const k of ['data', 'items', 'item', 'result', 'list']) {
+    const v = data?.[k];
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === 'object') {
+      const inner = Object.values(v).find(Array.isArray);
+      if (inner) return inner;
+    }
+  }
+  if (Array.isArray(data?.body?.items)) return data.body.items;
+  return null;
+}
+
 /** 오류 문구에 키가 섞여 나와도 결과 파일(공개 저장소)에 남지 않게 가린다 */
 export function redact(text, secret) {
   if (!secret) return text;
@@ -169,8 +187,16 @@ export async function fetchSmes24Items({ apiKey, url, days = 60, fetchImpl = fet
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
     const data = JSON.parse(text);
-    const list = data?.data ?? data?.items ?? data?.item ?? data?.body?.items ?? data?.result ?? (Array.isArray(data) ? data : null);
-    if (!Array.isArray(list)) throw new Error(`목록을 찾지 못함. 최상위 키: ${Object.keys(data || {}).join(',')}`);
+    const list = findList(data);
+    if (!Array.isArray(list)) {
+      // 응답은 {resultCd, resultMsg, data} 모양 — 결과 코드·메시지와 data 의 생김새를 남긴다
+      const d = data?.data;
+      const shape = d === null || d === undefined ? String(d)
+        : Array.isArray(d) ? `array(${d.length})`
+        : typeof d === 'object' ? `object{${Object.keys(d).slice(0, 15).join(',')}}`
+        : `${typeof d}:${String(d).slice(0, 80)}`;
+      throw new Error(`목록을 찾지 못함. resultCd=${data?.resultCd ?? '-'} resultMsg=${String(data?.resultMsg ?? '-').slice(0, 120)} data=${shape} 최상위 키: ${Object.keys(data || {}).join(',')}`);
+    }
     const fields = list[0] ? Object.keys(list[0]) : [];
     if (list[0]) log.log('[extra] 중소벤처24 첫 항목 필드:', fields.join(', '));
     const items = list.map(smes24ToItem).filter(Boolean);
