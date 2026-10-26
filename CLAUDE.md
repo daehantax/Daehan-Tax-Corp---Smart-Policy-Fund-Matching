@@ -11,7 +11,8 @@
 ## 이 저장소가 하는 일
 
 고객사가 사업자등록번호 + 대표자 성명을 입력하면, 회사의 지역·시군·업종에 맞는
-정부지원 공고를 골라 보여준다. 공고는 기업마당 API에서 매일 새벽 자동 동기화한다.
+정부지원 공고를 골라 보여준다. 공고는 **세 곳**(기업마당 API · 중소벤처24 API · 수동 등록)에서
+매일 새벽 자동 동기화한다.
 
 ```
 services/geo.ts              행정구역 판정 (시도·시군구·권역) — 지역 로직의 단일 출처
@@ -19,8 +20,13 @@ services/matchingService.ts  매칭 점수·자격 판정
 services/csvService.ts       공고 로드(수파베이스 → 구글시트 → CSV 폴백) + 스마트 태깅
 services/mockDb.ts           고객사 확인 (Edge Function 호출. 폴백 없음)
 scripts/sync-bizinfo.mjs     기업마당 API → CSV + 수파베이스 업서트 (GitHub Actions)
+scripts/extra-sources.mjs    중소벤처24 API + 수동 등록 공고 → 기업마당 형식으로 변환
+data/manual-grants.json      손으로 등록하는 공고. hideAfter 날짜가 지나면 자동으로 내려간다
 supabase/functions/verify-brn 사업자번호 + 대표자명 대조 Edge Function
 ```
+
+중소벤처24 응답에는 매출액·업력·근로자수 등이 **구조화된 값으로 들어 있지만 아직 쓰지 않는다.**
+→ [WORK_PLAN.md](docs/WORK_PLAN.md) C-8
 
 ## 깨뜨리면 안 되는 것
 
