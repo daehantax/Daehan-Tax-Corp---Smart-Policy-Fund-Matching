@@ -22,6 +22,8 @@ services/mockDb.ts           고객사 확인 (Edge Function 호출. 폴백 없�
 scripts/sync-bizinfo.mjs     기업마당 API → CSV + 수파베이스 업서트 (GitHub Actions)
 scripts/extra-sources.mjs    중소벤처24 API + 수동 등록 공고 → 기업마당 형식으로 변환
 data/manual-grants.json      손으로 등록하는 공고. hideAfter 날짜가 지나면 자동으로 내려간다
+scripts/research/            조사 전용 — 운영에 연결하지 않는다.
+                             audit-client-data.mjs 는 §7 고객사 데이터 충족률을 다시 재는 스크립트다
 supabase/functions/verify-brn 사업자번호 + 대표자명 대조 Edge Function
 ```
 
