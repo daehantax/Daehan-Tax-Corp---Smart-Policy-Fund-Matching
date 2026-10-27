@@ -1,0 +1,44 @@
+# [조사용] C-8 중소벤처24 구조화 필드 실태조사 — docs/WORK_PLAN.md C-8
+#
+# 왜 워크플로로 도나: SMES24_API_KEY 는 저장소 시크릿에만 있어 로컬에서 읽을 수 없다.
+# 수동 실행 전용이다(schedule 없음). 아무것도 커밋하지 않고 **로그에 집계만 찍는다.**
+#
+#   gh workflow run research-smes24.yml -f days=180
+#   gh run watch   # 끝나면 gh run view --log 로 읽는다
+#
+# ⚠ 공고는 공개 자료다. 고객사 데이터는 건드리지 않는다.
+#   응답 본문을 통째로 찍지 않는다 — 오류 문구에 키가 섞여 나올 수 있다.
+name: Research — SMES24 fields
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: '조회 기간(일). 기본 180'
+        required: false
+        default: '180'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Audit SMES24 structured fields
+        env:
+          SMES24_API_KEY: ${{ secrets.SMES24_API_KEY }}
+          SMES24_API_URL: ${{ secrets.SMES24_API_URL }}
+          # 기업마당 공고와의 중복을 가르는 데만 쓴다 — 공개 읽기용 anon 키
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SURVEY_DAYS: ${{ inputs.days }}
+        run: node scripts/research/audit-smes24-fields.mjs
