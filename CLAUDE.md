@@ -27,8 +27,9 @@ scripts/research/            조사 전용 — 운영에 연결하지 않는다.
 supabase/functions/verify-brn 사업자번호 + 대표자명 대조 Edge Function
 ```
 
-중소벤처24 응답에는 매출액·업력·근로자수 등이 **구조화된 값으로 들어 있지만 아직 쓰지 않는다.**
-→ [WORK_PLAN.md](docs/WORK_PLAN.md) C-8
+중소벤처24 응답에는 매출액·업력·근로자수 **칸은 있지만 값이 한 건도 없다**(2026-10-27 실측,
+5,397건 전수 0.0%). 「필드가 온다」를 「값이 온다」로 읽지 않는다 — `grants_meta.json` 의
+`smes24Fields` 는 첫 항목의 **키 이름만** 모은 것이다. → [WORK_PLAN.md](docs/WORK_PLAN.md) C-8
 
 ## 깨뜨리면 안 되는 것
 
