@@ -25,6 +25,10 @@ data/manual-grants.json      손으로 등록하는 공고. hideAfter 날짜가 
 scripts/research/            조사 전용 — 운영에 연결하지 않는다.
                              audit-client-data.mjs 는 §7 고객사 데이터 충족률을 다시 재는 스크립트다
 supabase/functions/verify-brn 사업자번호 + 대표자명 대조 Edge Function
+                             (매출 구간·업력·근로 인원도 함께 내려준다 — A-6)
+supabase/functions/_shared/companyProfile.ts
+                             매출 「온전함」·구간·업력·인원 판정. 순수 함수 —
+                             services/companyProfile.test.ts 가 묶고 있다
 ```
 
 중소벤처24 응답에는 매출액·업력·근로자수 **칸은 있지만 값이 한 건도 없다**(2026-10-27 실측,

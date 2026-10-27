@@ -34,6 +34,12 @@ export function normalizeName(name: string): string {
   return String(name || '').replace(/\s+/g, '');
 }
 
+/** 숫자만 받아들인다. `0` 은 살리고 null·undefined·빈 문자열은 undefined 로 떨군다.
+ *  (`data.x || undefined` 로 쓰면 「근로자 0명」이 「모름」으로 바뀌어 버린다) */
+function num(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
 export const MockDbService = {
   // 고객사 사업자번호 + 대표자 성명 확인
   async verifyClient(inputBrn: string, inputCeoName: string): Promise<VerifyResult> {
@@ -75,6 +81,21 @@ export const MockDbService = {
           // (생년월일·성별은 브라우저로 내려오지 않는다). 값이 없으면 판단하지 않는다.
           isYouthOwner: typeof data.isYouthOwner === 'boolean' ? data.isYouthOwner : undefined,
           isFemaleOwner: typeof data.isFemaleOwner === 'boolean' ? data.isFemaleOwner : undefined,
+          // 수치 프로필 (A-6). 함수가 아직 배포 전이면 전부 undefined 로 온다 — 그래도 동작한다.
+          // ⚠ 매출은 구간만 내려온다. 원본 금액은 서버 밖으로 나오지 않는다.
+          revenueBracket: data.revenueBracket || undefined,
+          revenueMin: num(data.revenueMin),
+          revenueMax: num(data.revenueMax),
+          revenueYear: num(data.revenueYear),
+          revenueCoverage: data.revenueCoverage || undefined,
+          revenueBasis: data.revenueBasis || undefined,
+          businessYears: num(data.businessYears),
+          // ⚠ 0 을 떨어뜨리지 않도록 num() 을 쓴다. 다만 값이 없는 것은 「0명」이 아니라 「모른다」다
+          employeeCount: num(data.employeeCount),
+          employeeYear: num(data.employeeYear),
+          employeeMonth: num(data.employeeMonth),
+          employeeMonths: num(data.employeeMonths),
+          industryCode: data.industryCode || undefined,
           region: CsvService.mapRegion(data.regionHint || ''),
           sigungu: CsvService.mapSigungu(data.regionHint || ''),
         },

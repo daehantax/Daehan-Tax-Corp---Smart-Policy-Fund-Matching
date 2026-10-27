@@ -36,6 +36,23 @@ export interface UserSession {
   // 생년월일·성별 같은 개인정보는 브라우저로 내리지 않는다.
   isYouthOwner?: boolean;   // 대표자가 만 39세 이하
   isFemaleOwner?: boolean;  // 대표자가 여성
+  // ── 수치 프로필 (WORK_PLAN A-6) — Edge Function 이 신고자료에서 꺼내 온다 ──
+  // ⚠ 매출은 **구간만** 내려온다. 원본 금액은 브라우저에 없다.
+  revenueBracket?: string;   // 예: '1~3억'
+  revenueMin?: number;       // 구간 하한(원, 포함) — 공고 기준선과 비교할 때 쓴다
+  revenueMax?: number;       // 구간 상한(원, 미만). 최상단 구간은 undefined
+  revenueYear?: number;      // 어느 해 귀속인가
+  // 'partial' = 1기나 2기가 비어 반쪽 금액이다. **판정에 쓰지 말고 「확인 필요」로 표시한다**
+  revenueCoverage?: 'full' | 'partial' | 'none';
+  revenueBasis?: '신고' | '수기';
+  businessYears?: number;    // 업력(만 년). 개업일을 모르면 undefined
+  // ⚠ 값이 없는 것은 「직원 0명」이 아니라 **모른다**는 뜻이다. 원천세를 우리가 맡지 않은
+  //   거래처가 많다(신고대리 236곳). 0 으로 채우지 않는다.
+  employeeCount?: number;
+  employeeYear?: number;
+  employeeMonth?: number;
+  employeeMonths?: number;   // 그 해 기록된 달 수. 1~2달뿐이면 대표값으로 보기 약하다
+  industryCode?: string;     // 국세청 업종코드 6자리 ⚠ 공고의 KSIC 5자리와 호환되지 않는다
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display

@@ -27,6 +27,13 @@
 // =============================================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  businessYears,
+  pickHeadcount,
+  pickRevenue,
+  type ClientFacts,
+  type FilingRow,
+} from '../_shared/companyProfile.ts';
 
 // 허용 오리진 — 서비스 도메인과 로컬 개발 주소만. 목록에 없으면 CORS 헤더를 주지 않아
 // 다른 사이트에 심어놓은 스크립트가 브라우저에서 이 함수를 호출할 수 없다.
@@ -62,6 +69,10 @@ const CLEANUP_PROBABILITY = 0.05;
 
 const YOUTH_AGE = 39;   // 청년 기준 (중소벤처기업부 만 39세 이하)
 
+// 매출을 찾아볼 귀속연도 — 최근 연도부터. 올해는 아직 2기가 안 끝나 늘 반쪽이라 뺀다.
+// (2026-10 현재 신고자료는 2023~2025 귀속, 수기 보충분은 2025 귀속만 있다)
+const revenueYears = (now: Date) => [now.getFullYear() - 1, now.getFullYear() - 2];
+
 function json(req: Request, body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -94,6 +105,81 @@ function ageOf(birthDate: unknown): number | undefined {
   const m = now.getMonth() - b.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
   return age;
+}
+
+/**
+ * 고객사 한 곳의 수치 프로필을 읽어 **브라우저에 내려도 되는 모양**으로 바꾼다.
+ *
+ * 돌려주는 것은 구간·년수·인원뿐이다 — **원본 매출 금액은 이 함수 밖으로 나가지 않는다.**
+ * 읽다가 실패하면 조용히 빈 객체를 준다. 수치가 없다고 확인을 실패시키지 않는다.
+ */
+async function loadProfile(admin: any, clientId: string, facts: ClientFacts) {
+  try {
+    const years = revenueYears(new Date());
+    // 원천세는 올해·작년치를 본다(가장 최근 달을 고르므로 넉넉히 받는다)
+    const whYears = [new Date().getFullYear(), new Date().getFullYear() - 1];
+
+    const { data: filingRows, error: filingErr } = await admin
+      .from('filings')
+      .select('id, tax_type, tax_year, period_code, period_chosen')
+      .eq('client_id', clientId)
+      .in('tax_year', [...new Set([...years, ...whYears])]);
+    if (filingErr) throw filingErr;
+
+    const filings: FilingRow[] = filingRows ?? [];
+    const idsOf = (...types: string[]) =>
+      filings.filter((f) => types.includes(String(f.tax_type))).map((f) => f.id);
+
+    const vatIds = idsOf('부가세');
+    const exemptIds = idsOf('면세');
+    const whIds = idsOf('원천세');
+
+    const [vatRes, exemptRes, whRes, manualRes] = await Promise.all([
+      vatIds.length
+        ? admin.from('filing_vat').select('filing_id, tax_base').in('filing_id', vatIds)
+        : Promise.resolve({ data: [] }),
+      exemptIds.length
+        ? admin.from('filing_exempt').select('filing_id, income_amount').in('filing_id', exemptIds)
+        : Promise.resolve({ data: [] }),
+      whIds.length
+        ? admin.from('filing_withholding').select('filing_id, cnt_wage').in('filing_id', whIds)
+        : Promise.resolve({ data: [] }),
+      admin.from('client_annual_revenue')
+        .select('tax_year, revenue_amount, source').eq('client_id', clientId),
+    ]);
+
+    const toMap = (rows: any[], col: string) =>
+      new Map<string, number | null>((rows ?? []).map((r) => [r.filing_id, r[col]]));
+
+    const revenue = pickRevenue(
+      years, facts, filings,
+      toMap(vatRes.data, 'tax_base'),
+      toMap(exemptRes.data, 'income_amount'),
+      manualRes.data ?? [],
+    );
+    const head = pickHeadcount(filings, toMap(whRes.data, 'cnt_wage'));
+
+    return {
+      // 매출 — 구간만. 금액은 내려보내지 않는다
+      revenueBracket: revenue.bracket?.label,
+      revenueMin: revenue.bracket?.min,
+      revenueMax: revenue.bracket?.max ?? undefined,
+      revenueYear: revenue.year,
+      // 'partial' = 한 반기가 비어 반쪽이다. 화면은 「확인 필요」로 쓰고 거르지 않는다
+      revenueCoverage: revenue.coverage,
+      revenueBasis: revenue.basis,
+      // 업력
+      businessYears: businessYears(facts.open_date),
+      // 근로 인원 — 값이 없으면 키 자체가 undefined 다. **0 명이 아니다**
+      employeeCount: head.count,
+      employeeYear: head.year,
+      employeeMonth: head.month,
+      employeeMonths: head.months,
+    };
+  } catch (err) {
+    console.error('[verify-brn] 수치 프로필 조회 실패(확인은 계속):', err);
+    return {};
+  }
 }
 
 Deno.serve(async (req) => {
@@ -149,7 +235,7 @@ Deno.serve(async (req) => {
 
     const { data, error } = await admin
       .from('clients')
-      .select('name, client_type, biz_type, biz_item, address, customer_type, client_persons(relation_type, persons(name, birth_date, gender))')
+      .select('id, name, client_type, tax_type, biz_type, biz_item, industry_code, open_date, close_date, address, customer_type, client_persons(relation_type, persons(name, birth_date, gender))')
       .in('biz_reg_no', [digits, hyphenated])
       .limit(5);
 
@@ -190,6 +276,14 @@ Deno.serve(async (req) => {
     const genders = reps.map((p: any) => p?.gender).filter(Boolean);
     const isFemaleOwner = genders.length > 0 ? genders.some((g: string) => g === '여') : undefined;
 
+    // ── 수치 프로필 — 매출 구간 · 업력 · 근로 인원 (A-6) ─────────────────────
+    // 신고 업무 쪽에서 이미 쌓고 있는 값을 꺼내 온다. 새 테이블도 AI 도 없다.
+    // 판정 규칙은 _shared/companyProfile.ts 에 있고 vitest 로 묶여 있다.
+    //
+    // ⚠ 여기서 실패해도 확인 자체는 성공시킨다. 수치는 거들 뿐이고,
+    //   이것 때문에 고객사가 로그인을 못 하면 안 된다.
+    const profile = await loadProfile(admin, match.id, match);
+
     // 대표자 성명(ceoName)은 응답에 담지 않는다 — 화면에서 쓰지 않는 개인정보다.
     return json(req, {
       found: true,
@@ -200,6 +294,10 @@ Deno.serve(async (req) => {
       regionHint: match.address ?? '',
       isYouthOwner,
       isFemaleOwner,
+      // ⚠ 업종코드는 국세청 6자리다. 공고의 업종 조건은 통계청 KSIC 5자리라 서로 변환되지
+      //   않는다(WORK_PLAN A-11). 지금은 내려보내기만 하고 매칭에는 쓰지 않는다.
+      industryCode: match.industry_code ?? '',
+      ...profile,
     });
   } catch (err) {
     console.error('[verify-brn] 오류:', err);
