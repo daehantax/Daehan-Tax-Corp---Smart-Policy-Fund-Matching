@@ -21,6 +21,8 @@ services/csvService.ts       공고 로드(수파베이스 → 구글시트 → 
 services/mockDb.ts           고객사 확인 (Edge Function 호출. 폴백 없음)
 scripts/sync-bizinfo.mjs     기업마당 API → CSV + 수파베이스 업서트 (GitHub Actions)
 scripts/extra-sources.mjs    중소벤처24 API + 수동 등록 공고 → 기업마당 형식으로 변환
+scripts/grant-thresholds.mjs 공고 본문에서 자격 기준선 숫자 추출 (매출·업력·인원).
+                             동기화가 policy_grants.conditions 에 담고, 앱이 받아 판정한다
 data/manual-grants.json      손으로 등록하는 공고. hideAfter 날짜가 지나면 자동으로 내려간다
 scripts/research/            조사 전용 — 운영에 연결하지 않는다.
                              audit-client-data.mjs 는 §7 고객사 데이터 충족률을 다시 재는 스크립트다

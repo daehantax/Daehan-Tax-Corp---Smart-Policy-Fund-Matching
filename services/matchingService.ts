@@ -1,4 +1,4 @@
-import { BizCategory, Grant, UserSession } from '../types';
+import { BizCategory, ConditionRange, Grant, UserSession } from '../types';
 import {
   detectZone,
   EXCLUSIVE_ZONES,
@@ -250,15 +250,125 @@ const UNVERIFIABLE_FLAG_LABELS: Record<string, string> = {
   '조건:체납': '세금 체납',
 };
 
-/** 공고에 있지만 우리가 판정하지 못한 자격 조건 이름들 */
-export function unverifiableConditions(g: Grant): string[] {
+// ── 수치 조건 판정 (WORK_PLAN C-9 + A-6) ────────────────────────────────────
+//
+// 공고 쪽 기준선(본문에서 읽음)과 우리 쪽 값(verify-brn 이 신고자료에서 가져옴)을 맞춰 본다.
+//
+// **확실히 벗어날 때만 주의 표시한다. 제외는 하지 않는다.**
+//   우리 쪽 매출은 **구간**이라(원본 금액은 브라우저로 안 내려온다) 경계에 걸치면 판정할 수
+//   없다. 예 — 구간 '1~3억' 이고 공고가 '3억원 이하' 면 실제값이 2.9억일 수도 있어 통과다.
+//   그래서 **구간 전체가 기준 밖일 때만** 어긋났다고 말한다.
+//   업력도 만 년수라 실제값은 [n, n+1) 구간이다. 같은 방식으로 본다.
+
+const AXIS_LABEL = { revenue: '매출액', years: '업력', employees: '상시근로자 수' } as const;
+type Axis = keyof typeof AXIS_LABEL;
+const AXIS_FLAG: Record<Axis, string> = {
+  revenue: '조건:매출액', years: '업력제한', employees: '조건:근로자수',
+};
+
+/** 금액을 사람이 읽는 꼴로 — 320000000 → '3.2억' */
+function won(v: number): string {
+  if (v >= 100_000_000) {
+    const 억 = v / 100_000_000;
+    return `${Number.isInteger(억) ? 억 : Number(억.toFixed(1))}억`;
+  }
+  return `${Math.round(v / 10_000).toLocaleString()}만원`;
+}
+
+function rangeText(axis: Axis, r: ConditionRange): string {
+  const f = axis === 'revenue' ? won : (v: number) => (axis === 'years'
+    ? (v < 1 ? `${Math.round(v * 12)}개월` : `${v}년`)
+    : `${v}명`);
+  if (r.min != null && r.max != null) return `${f(r.min)}~${f(r.max)}`;
+  if (r.max != null) return `${f(r.max)} 이하`;
+  return `${f(r.min as number)} 이상`;
+}
+
+interface AxisVerdict { judged: boolean; warning?: string }
+
+function judgeRevenue(c: ConditionRange, s: UserSession): AxisVerdict {
+  // 반쪽 매출(1기나 2기가 빔)로는 판정하지 않는다 — 절반 금액으로 통과시키면 틀린 안내가 나간다
+  if (s.revenueCoverage !== 'full' || s.revenueBracket == null) return { judged: false };
+  const lo = s.revenueMin, hi = s.revenueMax;   // 우리 구간 [lo, hi)
+  if (lo != null && c.max != null && lo > c.max) {
+    return { judged: true, warning: `매출 기준 초과 (우리 기록 ${s.revenueBracket} · 공고 ${rangeText('revenue', c)})` };
+  }
+  if (hi != null && c.min != null && hi <= c.min) {
+    return { judged: true, warning: `매출 기준 미달 (우리 기록 ${s.revenueBracket} · 공고 ${rangeText('revenue', c)})` };
+  }
+  return { judged: true };
+}
+
+function judgeYears(c: ConditionRange, s: UserSession): AxisVerdict {
+  const y = s.businessYears;
+  if (y == null) return { judged: false };
+  // 실제 업력은 [y, y+1) 이다. 그 구간 전체가 기준 밖일 때만 어긋났다고 본다
+  if (c.max != null && y > c.max) {
+    return { judged: true, warning: `업력 초과 (우리 기록 ${y}년 · 공고 ${rangeText('years', c)})` };
+  }
+  if (c.min != null && y + 1 <= c.min) {
+    return { judged: true, warning: `업력 미달 (우리 기록 ${y}년 · 공고 ${rangeText('years', c)})` };
+  }
+  return { judged: true };
+}
+
+function judgeEmployees(c: ConditionRange, s: UserSession): AxisVerdict {
+  const n = s.employeeCount;
+  if (n == null) return { judged: false };
+  // ⚠ 공고의 「상시근로자」와 우리 원천세 근로 인원은 같은 정의가 아니다. 그래서 문구에
+  //   「우리 기록」이라고 못박고, 어긋나도 제외하지 않는다.
+  if (c.max != null && n > c.max) {
+    return { judged: true, warning: `상시근로자 초과 (우리 기록 ${n}명 · 공고 ${rangeText('employees', c)})` };
+  }
+  if (c.min != null && n < c.min) {
+    return { judged: true, warning: `상시근로자 미달 (우리 기록 ${n}명 · 공고 ${rangeText('employees', c)})` };
+  }
+  return { judged: true };
+}
+
+const JUDGES: Record<Axis, (c: ConditionRange, s: UserSession) => AxisVerdict> = {
+  revenue: judgeRevenue, years: judgeYears, employees: judgeEmployees,
+};
+
+/**
+ * 공고 기준선과 우리 값을 맞춰 본 결과.
+ * `warnings` — 확실히 벗어난 것. `judged` — 판정이 끝나 「확인 필요」에서 뺄 축.
+ */
+export function conditionCheck(g: Grant, session: UserSession): { warnings: string[]; judged: Set<Axis> } {
+  const warnings: string[] = [];
+  const judged = new Set<Axis>();
+  const conds = g.conditions;
+  if (!conds) return { warnings, judged };
   const flags = g.targetFlags ?? [];
+
+  for (const axis of Object.keys(AXIS_LABEL) as Axis[]) {
+    const c = conds[axis];
+    // 꼬리표가 없는 축은 쓰지 않는다 — 동기화 쪽에서도 거르지만 한 번 더 막는다
+    if (!c || !flags.includes(AXIS_FLAG[axis])) continue;
+    const v = JUDGES[axis](c, session);
+    if (!v.judged) continue;
+    judged.add(axis);
+    if (v.warning) warnings.push(v.warning);
+  }
+  return { warnings, judged };
+}
+
+/**
+ * 공고에 있지만 우리가 판정하지 못한 자격 조건 이름들.
+ * 세션을 주면 **판정이 끝난 축은 빠진다** — 「확인 필요」라고 더 말할 필요가 없다.
+ */
+export function unverifiableConditions(g: Grant, session?: UserSession): string[] {
+  const flags = g.targetFlags ?? [];
+  const judged = session ? conditionCheck(g, session).judged : new Set<Axis>();
+  const judgedFlags = new Set([...judged].map((a) => AXIS_FLAG[a]));
   return Object.entries(UNVERIFIABLE_FLAG_LABELS)
-    .filter(([flag]) => flags.includes(flag))
+    .filter(([flag]) => flags.includes(flag) && !judgedFlags.has(flag))
     .map(([, label]) => label);
 }
 
 const INDUSTRY_MISMATCH_PENALTY = 20;
+// 수치 조건은 업종 추측보다 근거가 분명하다(공고에 숫자가 적혀 있고 우리 값도 신고자료다)
+const CONDITION_MISMATCH_PENALTY = 30;
 
 // 동기화 스크립트가 실제로 붙이는 플래그 이름과 일치하는지 테스트에서 대조한다
 // (services/syncParity.test.ts). 이름이 어긋나면 판정이 조용히 꺼진다.
@@ -348,6 +458,15 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   const warnings = industryWarnings(g, session);
   if (warnings.length > 0) score -= INDUSTRY_MISMATCH_PENALTY;
 
+  // 3-1) 수치 조건 — 공고가 건 기준선과 우리 값을 맞춰 본다 (C-9 + A-6).
+  //      업종 추측보다 근거가 분명하므로 감점을 조금 더 준다. **그래도 제외는 하지 않는다** —
+  //      우리 기록이 최신이 아닐 수 있고, 공고가 예외를 둘 수도 있다.
+  const cond = conditionCheck(g, session);
+  if (cond.warnings.length > 0) {
+    score -= CONDITION_MISMATCH_PENALTY;
+    warnings.push(...cond.warnings);
+  }
+
   // 4) 선택한 관심 키워드와 스마트 태그 일치 (키워드당 10, 최대 20).
   //    화면에서는 키워드 일치 공고를 별도 묶음으로 먼저 보여주므로(Dashboard),
   //    이 가점은 묶음 안에서의 순서를 정하는 역할이다.
@@ -371,7 +490,7 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   // 6) 기업마당 조회수(인기) 소폭 가산
   if ((g.views || 0) >= 1000) score += 5;
 
-  const checkPoints = unverifiableConditions(g);
+  const checkPoints = unverifiableConditions(g, session);
   return {
     score: Math.max(score, 1),
     reasons,

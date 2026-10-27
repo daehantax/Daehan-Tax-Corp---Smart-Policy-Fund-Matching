@@ -18,6 +18,7 @@
 // =============================================================================
 
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
+import { extractThresholds } from './grant-thresholds.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SOURCE_PREFIX, dropDuplicates, fetchSmes24Items, loadManualItems, protectedPrefixes } from './extra-sources.mjs';
@@ -354,6 +355,27 @@ const UNVERIFIABLE_FLAG_RULES = [
 /** 지원대상 표준값(기업마당이 직접 분류한 값)은 그대로 태그로 쓴다 — 신뢰도가 높다 */
 const TARGET_STANDARD = ['중소기업', '소상공인', '창업벤처', '사회적기업', '여성기업', '장애인기업', '마을기업', '협동조합', '제조업'];
 
+/**
+ * 공고 본문에서 자격 기준선을 읽는다 (WORK_PLAN C-9 · scripts/grant-thresholds.mjs).
+ *
+ * ⚠ **꼬리표가 붙은 축만 담는다.** 꼬리표 없이 숫자만 잡히는 공고가 있는데
+ *   (실측에서 확인), 그쪽은 오탐(誤探) 위험이 있다. 꼬리표 규칙은 이미 제 나름의
+ *   오탐 조정을 거쳤으므로, 둘 다 통과한 것만 쓴다 — 안전한 쪽으로 겹쳐 놓는 것이다.
+ *
+ * 읽어낸 축이 하나도 없으면 null 을 넣는다. **못 읽은 것과 「제한 없음」은 다르다.**
+ */
+const CONDITION_FLAG = { revenue: '조건:매출액', years: '업력제한', employees: '조건:근로자수' };
+
+function conditionsFor(title, target, summaryFull) {
+  const flags = extractTargetFlags(title, target, summaryFull);
+  const all = extractThresholds(eligibilityText(title, target, summaryFull));
+  const out = {};
+  for (const [axis, flag] of Object.entries(CONDITION_FLAG)) {
+    if (all[axis] && flags.includes(flag)) out[axis] = all[axis];
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function extractTargetFlags(title, target, summaryFull) {
   const flags = new Set();
 
@@ -452,10 +474,22 @@ async function syncToSupabase(records, protectPrefixes = []) {
   const skipped = records.length - rows.length;
   if (skipped > 0) console.warn(`[sync-bizinfo] 공고 ID(pblancId) 없는 ${skipped}건은 수파베이스 업서트에서 제외`);
 
+  // conditions 칸이 아직 없는 DB 에서도 동기화가 죽지 않게 한다.
+  // 마이그레이션(supabase/migrations/20261027_policy_grants_conditions.sql)을 아직 안 돌렸으면
+  // 그 칸만 빼고 올린다 — **동기화 전체가 실패해 공고가 사라지는 쪽이 훨씬 나쁘다.**
+  let hasConditions = true;
+  try {
+    const probe = await fetch(`${base}/rest/v1/policy_grants?select=conditions&limit=1`, { headers });
+    hasConditions = probe.ok;
+    if (!probe.ok) console.warn('[sync-bizinfo] ⚠ policy_grants.conditions 칸이 없습니다 — 기준선은 빼고 올립니다.'
+      + ' supabase/migrations/20261027_policy_grants_conditions.sql 를 실행하세요.');
+  } catch { hasConditions = false; }
+  const payload = hasConditions ? rows : rows.map(({ conditions, ...r }) => r);
+
   try {
     // 1) 500건씩 나눠 업서트 (pblanc_id 충돌 시 갱신)
-    for (let i = 0; i < rows.length; i += 500) {
-      const chunk = rows.slice(i, i + 500);
+    for (let i = 0; i < payload.length; i += 500) {
+      const chunk = payload.slice(i, i + 500);
       const res = await fetch(`${base}/rest/v1/policy_grants?on_conflict=pblanc_id`, {
         method: 'POST',
         headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -675,6 +709,7 @@ async function main() {
       region_codes: regionCodes,
       sigungu_codes: extractSigunguCodes(title, hashtagsText, regionCodes),
       target_flags: extractTargetFlags(title, target, summaryFull),
+      conditions: conditionsFor(title, target, summaryFull),
       support_amount: supportAmount,
       views: Number(views) || 0,
     });
@@ -703,6 +738,10 @@ async function main() {
   // 추출 결과 요약 — 규칙을 바꿨을 때 건수가 급변하면 로그에서 바로 보인다
   const sigunguCount = grantRecords.filter(r => r.sigungu_codes.length > 0).length;
   const flagCount = grantRecords.filter(r => r.target_flags.length > 0).length;
+  // 기준선을 읽은 건수 — 규칙을 바꿨을 때 급변하면 로그에서 바로 보인다
+  const condTally = { revenue: 0, years: 0, employees: 0 };
+  for (const r of grantRecords) for (const k of Object.keys(r.conditions ?? {})) condTally[k]++;
+  console.log(`[sync-bizinfo] 자격 기준선 추출: 매출 ${condTally.revenue}건 · 업력 ${condTally.years}건 · 근로자수 ${condTally.employees}건`);
   const flagTally = {};
   for (const r of grantRecords) for (const f of r.target_flags) flagTally[f] = (flagTally[f] || 0) + 1;
   console.log(`[sync-bizinfo] 시·군 전용 판정 ${sigunguCount}건 / 자격태그 보유 ${flagCount}건 / 지원금액 추출 ${amountFound}건`);

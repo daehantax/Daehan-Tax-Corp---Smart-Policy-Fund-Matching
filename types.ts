@@ -15,6 +15,9 @@ export interface Grant {
   regionCodes?: string[]; // 표준 지역코드 (전국/서울/…/제주) — DB region_codes 컬럼
   sigunguCodes?: string[]; // 시·군·구 (기초자치단체 전용 사업일 때만. 제목·해시태그에서 계산)
   targetFlags?: string[];  // 자격 조건 태그 (동기화 시 사업개요 원문에서 추출 — DB target_flags 컬럼)
+  // 공고 본문에서 읽어낸 자격 기준선 (DB conditions 컬럼 — WORK_PLAN C-9).
+  // ⚠ **읽어낸 축만 담긴다. 없는 축은 「제한 없음」이 아니라 「못 읽었다」는 뜻이다.**
+  conditions?: GrantConditions;
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;
@@ -23,6 +26,19 @@ export interface Grant {
   
   // Smart Tags based on analysis
   tags?: string[]; 
+}
+
+/** 기준선 한 축. 한쪽만 있을 수 있다 ("10억원 이하" 는 상한만) */
+export interface ConditionRange {
+  min: number | null;
+  max: number | null;
+}
+
+/** 공고가 거는 자격 기준선. 단위 — 매출 원 · 업력 년(0.5=6개월) · 인원 명 */
+export interface GrantConditions {
+  revenue?: ConditionRange;
+  years?: ConditionRange;
+  employees?: ConditionRange;
 }
 
 export interface UserSession {

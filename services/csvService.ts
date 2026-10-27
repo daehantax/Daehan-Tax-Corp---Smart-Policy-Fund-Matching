@@ -125,6 +125,11 @@ function mapSupabaseRow(row: any): Grant {
       ? row.sigungu_codes
       : extractSigunguCodes(row.title, hashtags.join(' ')),
     targetFlags: Array.isArray(row.target_flags) ? row.target_flags : [],
+    // 기준선은 동기화 스크립트가 본문에서 읽어 DB 에 넣는다. 아직 채워지지 않은 행은
+    // 그냥 없는 채로 둔다 — 앱에서 즉석 계산하지 않는다(본문을 앱으로 내려보내지 않으므로).
+    conditions: row.conditions && typeof row.conditions === 'object' && !Array.isArray(row.conditions)
+      ? row.conditions
+      : undefined,
     views: Number(row.views) || 0,
     tags: computeSmartTags({
       title: row.title, category: row.category, subCategory: row.sub_category,

@@ -1,0 +1,154 @@
+// 공고 기준선 ↔ 우리 값 맞추기 (WORK_PLAN C-9 + A-6)
+//
+// 이 판정의 기본 자세는 **「애매하면 말하지 않는다」** 다.
+// 우리 쪽 매출은 구간이고(원본 금액은 브라우저로 안 내려온다) 업력은 만 년수라,
+// 경계에 걸치면 실제값을 모른다. 그때 「자격 없다」는 신호를 주면 안 된다.
+import { describe, expect, it } from 'vitest';
+import { conditionCheck, unverifiableConditions } from './matchingService';
+import type { Grant, UserSession } from '../types';
+
+const 억 = 100_000_000;
+
+const grant = (over: Partial<Grant> = {}): Grant => ({
+  id: 'G1', title: '테스트 공고', department: '', agency: '', category: '기타',
+  startDate: '', endDate: '', registrationDate: '', detailUrl: '#', ...over,
+});
+
+/** 매출 구간이 잡힌 세션 */
+const withRevenue = (bracket: string, min: number, max: number | undefined,
+  coverage: UserSession['revenueCoverage'] = 'full'): UserSession =>
+  ({ type: 'CLIENT', identifier: '1', revenueBracket: bracket, revenueMin: min, revenueMax: max, revenueCoverage: coverage });
+
+describe('매출 — 구간 전체가 기준 밖일 때만 말한다', () => {
+  const g = grant({ targetFlags: ['조건:매출액'], conditions: { revenue: { min: null, max: 3 * 억 } } });
+
+  it('구간이 통째로 기준을 넘으면 주의 표시', () => {
+    const r = conditionCheck(g, withRevenue('5~10억', 5 * 억, 10 * 억));
+    expect(r.warnings).toEqual(['매출 기준 초과 (우리 기록 5~10억 · 공고 3억 이하)']);
+    expect(r.judged.has('revenue')).toBe(true);
+  });
+
+  it('구간이 기준에 걸치면 판정은 하되 주의는 띄우지 않는다', () => {
+    // 구간 '1~3억' 은 3억 미만이므로 '3억 이하' 를 통과한다
+    expect(conditionCheck(g, withRevenue('1~3억', 1 * 억, 3 * 억)).warnings).toEqual([]);
+    // 구간 '3~5억' 은 실제값이 3억일 수도 있다 — 단정하지 않는다
+    expect(conditionCheck(g, withRevenue('3~5억', 3 * 억, 5 * 억)).warnings).toEqual([]);
+  });
+
+  it('하한 조건은 구간 전체가 미달일 때만', () => {
+    const low = grant({ targetFlags: ['조건:매출액'], conditions: { revenue: { min: 5 * 억, max: null } } });
+    expect(conditionCheck(low, withRevenue('1억 미만', 0, 1 * 억)).warnings)
+      .toEqual(['매출 기준 미달 (우리 기록 1억 미만 · 공고 5억 이상)']);
+    expect(conditionCheck(low, withRevenue('5~10억', 5 * 억, 10 * 억)).warnings).toEqual([]);
+  });
+
+  // 가장 중요한 케이스 — 반쪽 금액으로 판정하면 틀린 안내가 나간다
+  it('반쪽 매출로는 판정하지 않는다', () => {
+    const r = conditionCheck(g, withRevenue('1~3억', 1 * 억, 3 * 억, 'partial'));
+    expect(r.judged.has('revenue')).toBe(false);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('매출을 모르면 판정하지 않는다', () => {
+    const r = conditionCheck(g, { type: 'CLIENT', identifier: '1', revenueCoverage: 'none' });
+    expect(r.judged.has('revenue')).toBe(false);
+  });
+});
+
+describe('업력 — 실제값은 [n, n+1) 구간이다', () => {
+  const upTo7 = grant({ targetFlags: ['업력제한'], conditions: { years: { min: null, max: 7 } } });
+  const from3 = grant({ targetFlags: ['업력제한'], conditions: { years: { min: 3, max: null } } });
+  const sess = (businessYears: number): UserSession => ({ type: 'CLIENT', identifier: '1', businessYears });
+
+  it('넘으면 주의 표시', () => {
+    expect(conditionCheck(upTo7, sess(8)).warnings).toEqual(['업력 초과 (우리 기록 8년 · 공고 7년 이하)']);
+  });
+
+  it('딱 걸치면 말하지 않는다 — 7년차의 실제 업력은 7.0~7.9년이다', () => {
+    expect(conditionCheck(upTo7, sess(7)).warnings).toEqual([]);
+  });
+
+  it('미달도 확실할 때만', () => {
+    expect(conditionCheck(from3, sess(1)).warnings).toEqual(['업력 미달 (우리 기록 1년 · 공고 3년 이상)']);
+    // 2년차는 실제 2.0~2.9년이라 3년에 못 미친다 — 단정할 수 있다
+    expect(conditionCheck(from3, sess(2)).warnings).toHaveLength(1);
+    expect(conditionCheck(from3, sess(3)).warnings).toEqual([]);
+  });
+
+  it('개월 단위 기준에 「0년」이 걸리지 않는다', () => {
+    // 업력 0년(=개업 8개월)인 곳이 '6개월 이상' 조건에 미달이라고 나오면 안 된다
+    const half = grant({ targetFlags: ['업력제한'], conditions: { years: { min: 0.5, max: null } } });
+    expect(conditionCheck(half, sess(0)).warnings).toEqual([]);
+  });
+
+  it('개업일을 모르면 판정하지 않는다', () => {
+    expect(conditionCheck(upTo7, { type: 'CLIENT', identifier: '1' }).judged.has('years')).toBe(false);
+  });
+});
+
+describe('근로자수', () => {
+  const g = grant({ targetFlags: ['조건:근로자수'], conditions: { employees: { min: 5, max: 300 } } });
+  const sess = (employeeCount: number): UserSession => ({ type: 'CLIENT', identifier: '1', employeeCount });
+
+  it('모자라면 주의 표시', () => {
+    expect(conditionCheck(g, sess(2)).warnings).toEqual(['상시근로자 미달 (우리 기록 2명 · 공고 5명~300명)']);
+  });
+
+  it('넘으면 주의 표시', () => {
+    expect(conditionCheck(g, sess(400)).warnings).toHaveLength(1);
+  });
+
+  it('맞으면 조용하다', () => {
+    expect(conditionCheck(g, sess(10)).warnings).toEqual([]);
+  });
+
+  // 원천세 신고 행이 없는 382곳을 「0명」으로 읽으면 전부 미달로 뜬다
+  it('인원을 모르면 판정하지 않는다 — 0명으로 읽지 않는다', () => {
+    const r = conditionCheck(g, { type: 'CLIENT', identifier: '1' });
+    expect(r.judged.has('employees')).toBe(false);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('0명은 유효한 값이라 판정한다', () => {
+    expect(conditionCheck(g, sess(0)).warnings).toHaveLength(1);
+  });
+});
+
+describe('안전장치', () => {
+  it('기준선이 없으면 아무것도 하지 않는다', () => {
+    const g = grant({ targetFlags: ['조건:매출액'] });
+    expect(conditionCheck(g, withRevenue('5~10억', 5 * 억, 10 * 억))).toEqual({ warnings: [], judged: new Set() });
+  });
+
+  it('꼬리표가 없는 축은 쓰지 않는다 — 숫자만 잡힌 공고는 오탐(誤探) 위험이 있다', () => {
+    const g = grant({ targetFlags: [], conditions: { revenue: { min: null, max: 3 * 억 } } });
+    expect(conditionCheck(g, withRevenue('5~10억', 5 * 억, 10 * 억)).warnings).toEqual([]);
+  });
+});
+
+describe('unverifiableConditions — 판정한 축은 「확인 필요」에서 뺀다', () => {
+  const g = grant({
+    targetFlags: ['조건:매출액', '업력제한', '조건:근로자수'],
+    conditions: { revenue: { min: null, max: 3 * 억 }, years: { min: null, max: 7 } },
+  });
+
+  it('세션이 없으면 전부 확인 필요 (기존 동작)', () => {
+    expect(unverifiableConditions(g)).toEqual(['상시근로자 수', '업력', '매출액']);
+  });
+
+  it('판정한 축만 빠진다', () => {
+    const s: UserSession = {
+      type: 'CLIENT', identifier: '1',
+      revenueBracket: '1~3억', revenueMin: 1 * 억, revenueMax: 3 * 억, revenueCoverage: 'full',
+      businessYears: 5,
+      // 인원은 모른다 → 「확인 필요」로 남아야 한다 (기준선 자체도 못 읽었다)
+    };
+    expect(unverifiableConditions(g, s)).toEqual(['상시근로자 수']);
+  });
+
+  it('값이 있어도 기준선을 못 읽었으면 확인 필요로 남는다', () => {
+    const noCond = grant({ targetFlags: ['조건:매출액'] });
+    const s = withRevenue('1~3억', 1 * 억, 3 * 억);
+    expect(unverifiableConditions(noCond, s)).toEqual(['매출액']);
+  });
+});
