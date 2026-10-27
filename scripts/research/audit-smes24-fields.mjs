@@ -107,6 +107,8 @@ const GROUPS = [
   ['성장단계', ['lifeCyclDvsn', 'lifeCyclDvsnCd']],
   ['지원금액·금리', ['minSportAmt', 'maxSportAmt', 'minInrst', 'maxInrst']],
   ['첨부파일', ['pblancAttach', 'pblancAttachNm', 'pblancFileUrl', 'pblancFileNm']],
+  // 조건 슬롯이 비어 오면 남는 길은 본문뿐이다 — 본문이 얼마나 오는지도 같이 센다
+  ['본문(규칙 추출용)', ['policyCnts', 'sportTrget', 'sportCnts', 'sportMg', 'detailBsnsNm', 'sportType']],
 ];
 
 for (const [group, fields] of GROUPS) {
@@ -128,6 +130,15 @@ for (const [group, fields] of GROUPS) {
   console.log('');
 }
 
+// ── 키는 오는데 값이 한 건도 없는 필드 ───────────────────────────────────────
+// grants_meta.json 의 smes24Fields 는 **첫 항목의 키 이름만** 모은 것이라(extra-sources.mjs)
+// 「필드가 온다 = 값이 온다」가 아니다. 빈 슬롯을 따로 세어 그 착각을 못 하게 한다.
+const allKeys = [...new Set(list.flatMap((it) => Object.keys(it)))].sort();
+const empty = allKeys.filter((k) => !list.some((it) => filled(it[k])));
+console.log('■ 키는 오는데 값이 한 건도 없는 필드');
+console.log(`  ${empty.length}/${allKeys.length}개: ${empty.join(' · ') || '(없음)'}
+`);
+
 // ── 조건을 하나라도 들고 오는 공고 ───────────────────────────────────────────
 const COND = ['minSalsAmt', 'maxSalsAmt', 'minAblbiz', 'maxAblbiz', 'minEmplyCnt', 'mixEmplyCnt',
   'needCrtfn', 'minRpsntAge', 'maxRpsntAge', 'fmleRpsntYn', 'induty', 'cmpScale'];
@@ -138,6 +149,15 @@ console.log(`  중복제외분 ${kept.filter(anyCond).length}/${kept.length}  ${
 const perItem = list.map((it) => COND.filter((f) => filled(it[f])).length);
 console.log(`  공고당 조건 개수: 0개 ${perItem.filter((n) => n === 0).length} · 1~2개 ${perItem.filter((n) => n >= 1 && n <= 2).length}`
   + ` · 3~5개 ${perItem.filter((n) => n >= 3 && n <= 5).length} · 6개+ ${perItem.filter((n) => n >= 6).length}`);
+
+// ── 본문 길이 ────────────────────────────────────────────────────────────────
+// 규칙·AI 로 읽어야 할 분량이다. 너무 짧으면 조건이 본문에도 없다는 뜻이다.
+const lens = list.map((it) => ['policyCnts', 'sportTrget', 'sportCnts', 'sportMg']
+  .map((f) => String(it[f] ?? '')).join(' ').trim().length).sort((a, b) => a - b);
+const q = (p) => lens[Math.floor((lens.length - 1) * p)] ?? 0;
+console.log(`
+■ 본문 길이(policyCnts+sportTrget+sportCnts+sportMg, 글자)`);
+console.log(`  0자 ${lens.filter((n) => n === 0).length}건 · 중앙값 ${q(0.5)} · 상위 10% ${q(0.9)} · 최대 ${lens[lens.length - 1]}`);
 
 // ── 지금 버려지는 값 ─────────────────────────────────────────────────────────
 // smes24ToItem() 을 실제로 돌려서, 들어온 필드 중 몇 개가 살아남는지 눈으로 확인한다
