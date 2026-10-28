@@ -71,7 +71,9 @@ for (const k of keys) {
 // 이름에 file/attach/파일 이 들어가거나, 값이 파일 확장자로 끝나는 필드를 찾는다
 const FILE_NAME = /file|attach|atch|파일|첨부|down/i;
 const FILE_VALUE = /\.(pdf|hwp|hwpx|docx?|xlsx?|pptx?|zip)(\?|$)/i;
-const suspects = keys.filter((k) => FILE_NAME.test(k)
+// 경로 필드(flpthNm 등)는 이름에도 값에도 확장자가 없을 수 있어 짝으로 함께 본다
+const PATH_NAME = /flpth|path|경로|url/i;
+const suspects = keys.filter((k) => FILE_NAME.test(k) || PATH_NAME.test(k)
   || list.some((it) => FILE_VALUE.test(String(it[k] ?? ''))));
 
 console.log(`\n■ 첨부파일로 보이는 필드 — ${suspects.length}개`);
