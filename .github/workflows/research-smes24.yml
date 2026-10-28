@@ -1,4 +1,4 @@
-# [조사용] C-8 중소벤처24 구조화 필드 실태조사 — docs/WORK_PLAN.md C-8
+# [조사용] 공고 출처가 실제로 무엇을 주는지 — docs/WORK_PLAN.md C-8(중소벤처24) · A-2(첨부파일)
 #
 # 왜 워크플로로 도나: SMES24_API_KEY 는 저장소 시크릿에만 있어 로컬에서 읽을 수 없다.
 # 수동 실행 전용이다(schedule 없음). 아무것도 커밋하지 않고 **로그에 집계만 찍는다.**
@@ -8,7 +8,7 @@
 #
 # ⚠ 공고는 공개 자료다. 고객사 데이터는 건드리지 않는다.
 #   응답 본문을 통째로 찍지 않는다 — 오류 문구에 키가 섞여 나올 수 있다.
-name: Research — SMES24 fields
+name: Research — 공고 출처 필드 조사
 
 on:
   workflow_dispatch:
@@ -42,3 +42,11 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SURVEY_DAYS: ${{ inputs.days }}
         run: node scripts/research/audit-smes24-fields.mjs
+
+      # A-2 — 기업마당도 첨부파일 URL 을 주는지. 주면 상세페이지를 긁지 않아도 된다
+      - name: Audit Bizinfo fields (A-2 첨부파일)
+        if: always()   # 앞 단계가 실패해도 이쪽은 따로 보고 싶다
+        env:
+          BIZINFO_API_KEY: ${{ secrets.BIZINFO_API_KEY }}
+          BIZINFO_RELAY_URL: ${{ secrets.BIZINFO_RELAY_URL }}
+        run: node scripts/research/audit-bizinfo-fields.mjs
