@@ -1,0 +1,46 @@
+# 첨부파일에서 글자 뽑기 — docs/WORK_PLAN.md A-3
+#
+# 매일 동기화(새벽 5시)가 끝난 뒤에 돈다. 수동 실행도 된다:
+#   gh workflow run extract-documents.yml -f batch=200
+#
+# **파일은 보관하지 않는다.** 받아서 글자만 뽑고 버린다 — 커밋하는 것도 없다.
+# 한 번에 batch 개만 하고, 남은 것은 다음 실행이 이어서 한다.
+name: Extract attachment text
+
+on:
+  schedule:
+    - cron: '30 20 * * *'   # KST 05:30 — 동기화(05:00) 뒤
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: '한 번에 처리할 첨부 개수. 기본 200'
+        required: false
+        default: '200'
+
+permissions:
+  contents: read
+
+# 앞 실행이 아직 돌고 있으면 겹쳐 돌리지 않는다 (같은 파일을 두 번 받지 않게)
+concurrency:
+  group: extract-documents
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Extract text from attachments
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EXTRACT_BATCH: ${{ inputs.batch || '200' }}
+        run: node scripts/extract-documents.mjs

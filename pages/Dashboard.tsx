@@ -294,11 +294,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 {/* 우리 회사에 해당하는 것 — 세무 자료에 없는 값은 본인만 안다 (C-10) */}
                 {session.type === 'CLIENT' && (
                   <div className="mb-8 border-t border-slate-100 pt-6">
-                    <p className="text-sm font-bold text-slate-700 mb-1">우리 회사에 해당하는 것이 있나요?</p>
-                    <p className="text-xs text-slate-400 mb-4">
-                      특허·연구소·공장등록처럼 세무 자료에 없는 항목입니다.
-                      체크하시면 그 조건이 걸린 공고를 먼저 보여드립니다. 건너뛰셔도 됩니다.
-                    </p>
+                    <p className="text-sm font-bold text-slate-700 mb-4">우리 회사에 해당하는 것이 있나요?</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {SELF_CHECK_ITEMS.map(item => (
                         <button
