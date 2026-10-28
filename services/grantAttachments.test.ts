@@ -86,3 +86,45 @@ describe('거드는 함수들', () => {
     expect(attachmentsOrNull([{ name: 'a', url: 'u', ext: '' }])).toHaveLength(1);
   });
 });
+
+// ── 중소벤처24 의 함정 ─────────────────────────────────────────────────────
+// 2026-10-28 첫 동기화에서 실제로 틀렸던 자리. 값은 DB 에 담겼던 그대로다.
+describe('중소벤처24 — 이름 자리에 내부 경로가 온다', () => {
+  it("'|' 로도 값을 가른다 — 중소벤처24는 '@' 가 아니다", () => {
+    const r = smes24Attachments({
+      pblancFileNm: 'a.pdf|b.hwp',
+      pblancFileUrl: 'https://portal.smes.go.kr/f/1|https://portal.smes.go.kr/f/2',
+    });
+    expect(r.map((x) => x.name)).toEqual(['a.pdf', 'b.hwp']);
+  });
+
+  it('경로처럼 생긴 값은 이름으로 쓰지 않는다 — 주소는 그대로 남긴다', () => {
+    const r = smes24Attachments({
+      pblancAttachNm: '/save/pbanc/PBLN_000000000105162/attached_files',
+      pblancAttach: 'https://www.bizinfo.go.kr/cmm/fms/getImageFile.do?atchFileId=FILE_1&fileSn=1',
+    });
+    expect(r).toHaveLength(1);
+    expect(r[0].name).toBe('');     // 경로를 파일명으로 찍지 않는다
+    expect(r[0].ext).toBe('');      // '.do' 가 확장자로 잡히지 않는다
+    expect(r[0].url).toContain('bizinfo.go.kr');
+  });
+
+  it("'/aidata/...' 덩어리도 이름으로 쓰지 않는다", () => {
+    const blob = '/aidata/save/pbanc/pblanc/20261026/63de0541.do|/aidata/save/pbanc/pblanc/20261026/f1a658e1.do';
+    const r = smes24Attachments({
+      pblancAttachNm: blob,
+      pblancAttach: 'https://www.smes.go.kr/sanhakin/common/fileDownload.do?DOWNLOAD_KEY_IF=7485F3F8',
+    });
+    expect(r[0].name).toBe('');
+    expect(r[0].ext).toBe('');
+  });
+
+  it('제대로 된 이름은 그대로 둔다', () => {
+    const r = smes24Attachments({
+      pblancFileNm: '2025년_중소기업_기술거래_활성화_지원사업_시행계획_공고.hwp',
+      pblancFileUrl: 'https://portal.smes.go.kr/home/api/v1/files/download/PB_1/0',
+    });
+    expect(r[0].ext).toBe('hwp');
+    expect(r[0].name).toContain('기술거래');
+  });
+});

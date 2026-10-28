@@ -13,13 +13,33 @@
 // 여기서는 **주소만 모은다. 내려받지 않는다.** 내려받기·텍스트 추출은 A-3 의 몫이다.
 // =============================================================================
 
-/** 기업마당·중소벤처24 모두 여러 값을 '@' 로 잇는다 */
-const SEP = '@';
+/**
+ * 값을 여러 개로 가르는 구분자.
+ * 기업마당은 '@', 중소벤처24는 '|' 를 쓴다. 파일 이름에는 둘 다 거의 쓰이지 않는다
+ * (윈도우에서 '|' 는 파일명에 못 쓴다).
+ */
+const SEP_RE = /[@|]/;
 
 /** 주소로 쓸 수 있는 값인가 — http(s) 만 받는다. 상대경로·빈값·'-' 는 버린다 */
 function usableUrl(v) {
   const s = String(v ?? '').trim();
   return /^https?:\/\/\S+$/.test(s) ? s : null;
+}
+
+/**
+ * 이름 자리에 들어온 값이 **사람이 읽는 파일 이름**인가.
+ *
+ * ⚠ 중소벤처24 `pblancAttachNm` 에는 이름이 아니라 내부 경로가 들어온다 —
+ *   "/save/pbanc/PBLN_000000000105162/attached_files", "/aidata/save/.../xxx.do".
+ *   그대로 두면 화면과 로그에 경로가 파일명으로 찍히고 확장자도 '.do' 로 잡힌다.
+ *   경로처럼 생겼으면 이름을 비운다 — **주소는 멀쩡하므로 버리지는 않는다.**
+ */
+function cleanName(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (/^[/\\]/.test(s)) return '';
+  if (/\/(?:aidata|save|upload|files?)\//i.test(s)) return '';
+  return s;
 }
 
 /** 파일 이름에서 확장자만 뽑는다 (소문자). 없으면 빈 문자열 */
@@ -36,13 +56,13 @@ export function extensionOf(name) {
  *   파일명으로 거르지 않는다 (C-1 결론 1 — 이름만 보고 거르면 26% 를 놓쳤다).
  */
 function zipNamesUrls(namesRaw, urlsRaw) {
-  const names = String(namesRaw ?? '').split(SEP).map((s) => s.trim());
-  const urls = String(urlsRaw ?? '').split(SEP).map((s) => s.trim());
+  const names = String(namesRaw ?? '').split(SEP_RE).map((s) => s.trim());
+  const urls = String(urlsRaw ?? '').split(SEP_RE).map((s) => s.trim());
   const out = [];
   for (let i = 0; i < urls.length; i++) {
     const url = usableUrl(urls[i]);
     if (!url) continue;
-    const name = names[i] ?? '';
+    const name = cleanName(names[i]);
     out.push({ name, url, ext: extensionOf(name) });
   }
   return out;
