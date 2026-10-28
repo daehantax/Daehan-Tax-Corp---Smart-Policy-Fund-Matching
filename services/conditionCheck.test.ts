@@ -4,7 +4,7 @@
 // 우리 쪽 매출은 구간이고(원본 금액은 브라우저로 안 내려온다) 업력은 만 년수라,
 // 경계에 걸치면 실제값을 모른다. 그때 「자격 없다」는 신호를 주면 안 된다.
 import { describe, expect, it } from 'vitest';
-import { conditionCheck, unverifiableConditions } from './matchingService';
+import { conditionCheck, scoreGrant, unverifiableConditions } from './matchingService';
 import type { Grant, UserSession } from '../types';
 
 const 억 = 100_000_000;
@@ -150,5 +150,41 @@ describe('unverifiableConditions — 판정한 축은 「확인 필요」에서 
     const noCond = grant({ targetFlags: ['조건:매출액'] });
     const s = withRevenue('1~3억', 1 * 억, 3 * 억);
     expect(unverifiableConditions(noCond, s)).toEqual(['매출액']);
+  });
+});
+
+// ── scoreGrant 까지 — 실제로 화면에 나가는 모양인가 ─────────────────────────
+// 값은 2026-10-28 DB 에 실제로 담긴 기준선에서 가져왔다.
+describe('scoreGrant — 경고가 카드까지 간다', () => {
+  const 카드수수료 = grant({   // [강원] 동해시 소상공인 카드수수료 — conditions {revenue:{max:3억}}
+    title: '[강원] 동해시 2026년 소상공인 카드수수료 지원사업 공고',
+    targetFlags: ['소상공인', '조건:매출액'],
+    conditions: { revenue: { min: null, max: 3 * 억 } },
+    endDate: '2026-12-31',
+  });
+
+  const base = (over: Partial<UserSession> = {}): UserSession =>
+    ({ type: 'CLIENT', identifier: '1234567890', region: '강원', ...over });
+
+  it('기준을 넘으면 주의 문구가 warnings 로 나가고 감점된다', () => {
+    const over = base({ revenueBracket: '5~10억', revenueMin: 5 * 억, revenueMax: 10 * 억, revenueCoverage: 'full' });
+    const plain = base();
+    const r = scoreGrant(카드수수료, over, []);
+    expect(r.warnings).toContain('매출 기준 초과 (우리 기록 5~10억 · 공고 3억 이하)');
+    expect(r.score).toBeLessThan(scoreGrant(카드수수료, plain, []).score);
+    // 그래도 **제외하지 않는다** — 우리 기록이 최신이 아닐 수 있다
+    expect(r.score).toBeGreaterThan(0);
+  });
+
+  it('판정이 끝나면 「공고문 확인 필요」가 사라진다', () => {
+    const ok = base({ revenueBracket: '1~3억', revenueMin: 1 * 억, revenueMax: 3 * 억, revenueCoverage: 'full' });
+    const r = scoreGrant(카드수수료, ok, []);
+    expect(r.checkPoints).toBeUndefined();
+    expect(r.warnings).toBeUndefined();
+  });
+
+  it('우리 값을 모르면 전처럼 「확인 필요」로 남는다', () => {
+    const r = scoreGrant(카드수수료, base(), []);
+    expect(r.checkPoints).toEqual(['매출액']);
   });
 });
