@@ -26,9 +26,21 @@ export const SUPPORTED = new Set(['pdf', 'hwpx', 'docx', 'xlsx', 'pptx', 'zip', 
 /** 지금은 못 읽는다고 **알고 있는** 형식 — 실패와 구분해 기록한다 */
 export const KNOWN_UNSUPPORTED = new Set(['hwp', 'doc', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'zip64']);
 
-/** 글자 사이 빈 줄·공백을 정리한다. 추출기마다 결과가 들쭉날쭉해서 한 번에 다듬는다 */
+/**
+ * 글자 사이 빈 줄·공백을 정리한다. 추출기마다 결과가 들쭉날쭉해서 한 번에 다듬는다.
+ *
+ * ⚠ **DB 로 보낼 수 없는 글자를 먼저 걷어낸다.** 2026-10-28 첫 실행에서 200개를 다
+ *   뽑아 놓고 저장에서 `PGRST102 Empty or invalid json` 으로 통째로 잃었다.
+ *   · NUL(\u0000) — 포스트그레스 text 가 못 받는다
+ *   · 짝 없는 서러게이트 — JSON 으로 만들면 깨진 UTF-8 이 되어 서버가 본문을 못 읽는다
+ *   · 그 밖의 제어문자 — 줄바꿈·탭만 남긴다
+ */
 export function tidy(text) {
   return String(text ?? '')
+    // 짝이 맞는 서러게이트 쌍은 두고, 혼자 남은 것만 지운다
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .replace(/\r\n?/g, '\n')
     .replace(/[\t 　]+/g, ' ')
     .replace(/ {2,}/g, ' ')

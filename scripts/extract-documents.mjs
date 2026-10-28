@@ -28,7 +28,7 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const BATCH = Number(process.env.EXTRACT_BATCH || 200);
 const DELAY_MS = Number(process.env.EXTRACT_DELAY || 400);
 const MAX_BYTES = Number(process.env.EXTRACT_MAX_BYTES || 40 * 1024 * 1024);   // 40MB
-const MAX_CHARS = Number(process.env.EXTRACT_MAX_CHARS || 200_000);
+const MAX_CHARS = Number(process.env.EXTRACT_MAX_CHARS || 120_000);
 const TIMEOUT_MS = 90_000;
 
 if (!BASE || !KEY) {
@@ -146,21 +146,42 @@ for (let i = 0; i < batch.length; i++) {
 }
 
 // ── 담기 ─────────────────────────────────────────────────────────────────────
-for (let i = 0; i < rows.length; i += 100) {
-  const chunk = rows.slice(i, i + 100);
+// ⚠ 묶음이 실패하면 **한 줄씩 다시 넣어 본다.** 2026-10-28 첫 실행에서 한 줄 때문에
+//   200개를 통째로 잃었다. 받아 놓은 것을 글자 하나 때문에 버리면 안 된다.
+//   묶음을 20줄로 줄인 것도 같은 이유다 — 본문이 커서 한 번에 너무 많이 보내면 거절당한다.
+async function save(chunk) {
   const res = await fetch(`${BASE}/rest/v1/grant_documents?on_conflict=url`, {
     method: 'POST',
     headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(chunk),
   });
-  if (!res.ok) {
-    console.error(`[extract] 저장 실패 HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    process.exit(1);
+  return res.ok ? null : `HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`;
+}
+
+let saved = 0;
+const failures = [];
+for (let i = 0; i < rows.length; i += 20) {
+  const chunk = rows.slice(i, i + 20);
+  const err = await save(chunk);
+  if (!err) { saved += chunk.length; continue; }
+  console.warn(`[extract] 묶음 저장 실패(${err}) — 한 줄씩 다시 넣습니다.`);
+  for (const row of chunk) {
+    const e = await save([row]);
+    if (e) {
+      // 글자를 빼고 상태만이라도 남긴다. 다시 받지 않도록
+      const e2 = await save([{ ...row, text: null, status: 'failed', error: `저장 실패: ${e}`.slice(0, 300) }]);
+      if (e2) failures.push(`${row.url.slice(0, 70)} — ${e2}`);
+      else { saved++; console.warn(`[extract]   글자를 빼고 저장: ${(row.name || row.url).slice(0, 50)}`); }
+    } else saved++;
   }
+}
+if (failures.length) {
+  console.error(`[extract] ⚠ 끝내 저장하지 못한 것 ${failures.length}개`);
+  for (const f of failures.slice(0, 5)) console.error(`    ${f}`);
 }
 
 const chars = rows.reduce((n, r) => n + (r.chars ?? 0), 0);
-console.log(`[extract] 완료 — ${rows.length}개 저장 · 글자 ${chars.toLocaleString()}자`);
+console.log(`[extract] 완료 — ${saved}/${rows.length}개 저장 · 글자 ${chars.toLocaleString()}자`);
 console.log(`[extract] 결과: ${Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 const left = todo.length - batch.length;
 if (left > 0) console.log(`[extract] 남은 것 ${left}개 — 다시 돌리면 이어서 합니다.`);
