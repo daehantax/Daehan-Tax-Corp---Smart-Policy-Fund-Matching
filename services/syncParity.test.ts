@@ -10,7 +10,7 @@ import {
   extractTargetFlags,
   __setSidoOf,
 } from '../scripts/sync-bizinfo.mjs';
-import { INDUSTRY_MISMATCH_FLAGS, OWNER_MISMATCH_FLAGS } from './matchingService';
+import { INDUSTRY_MISMATCH_FLAGS, OWNER_MISMATCH_FLAGS, SELF_CHECK_FLAGS } from './matchingService';
 
 // 동기화 스크립트는 Node 단독 실행이라 앱의 TS 모듈을 불러올 수 없고, 같은 규칙을
 // 복제해 두고 있다(주석으로 "함께 수정할 것"이라 표시). 한쪽만 고치면 DB에 저장되는
@@ -101,9 +101,17 @@ describe('앱의 판정 규칙이 참조하는 플래그를 동기화 스크립�
     '여성기업': { title: '여성기업 육성사업', target: '중소기업', summary: '☞ 여성기업' },
     '대상:법인': { title: '소상공인(법인사업자) 비즈플러스카드 지원사업', target: '소상공인', summary: '☞ 매출액 기준을 충족하는 법인사업자' },
     '대상:개인': { title: '소상공인(개인사업자) 비즈플러스카드 지원사업', target: '소상공인', summary: '☞ 매출액 기준을 충족하는 개인사업자' },
+    // 고객사가 직접 체크하는 조건들 (C-10) — 문장은 실제 공고에서 가져왔다
+    '조건:특허': { title: 'IP 담보대출 연계 지식재산평가 지원사업', target: '중소기업', summary: '☞ 등록된 특허권을 보유하고 사업화하여 활용하고 있는 사업자' },
+    '조건:연구소': { title: '기술개발 지원사업', target: '중소기업', summary: '☞ 기업부설연구소 또는 연구개발전담부서를 보유한 중소기업' },
+    '조건:공장등록': { title: '제조기업 지원사업', target: '중소기업', summary: '☞ 공장등록증을 보유하고 신청일 현재 가동 중인 기업' },
+    '수출실적': { title: '수출바우처 지원사업', target: '중소기업', summary: '☞ 최근 1년 직수출 실적 보유 기업' },
+    '조건:인증': { title: '인증기업 지원사업', target: '중소기업', summary: '☞ 벤처기업 확인을 받은 기업' },
+    '조건:4대보험': { title: '고용 지원사업', target: '중소기업', summary: '☞ 4대 보험 가입 사업장' },
+    '조건:체납': { title: '융자 지원사업', target: '중소기업', summary: '☞ 국세 및 지방세 체납이 없는 기업' },
   };
 
-  it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS])('%s', (flag) => {
+  it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS, ...SELF_CHECK_FLAGS])('%s', (flag) => {
     const s = SAMPLES[flag];
     expect(s, `앱 규칙에 있는 '${flag}' 의 샘플 입력이 이 테스트에 없다`).toBeDefined();
     expect(extractTargetFlags(s.title, s.target, s.summary)).toContain(flag);

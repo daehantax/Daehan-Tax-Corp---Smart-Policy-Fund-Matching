@@ -69,6 +69,10 @@ export interface UserSession {
   employeeMonth?: number;
   employeeMonths?: number;   // 그 해 기록된 달 수. 1~2달뿐이면 대표값으로 보기 약하다
   industryCode?: string;     // 국세청 업종코드 6자리 ⚠ 공고의 KSIC 5자리와 호환되지 않는다
+  // 고객사가 직접 체크한 항목 (WORK_PLAN C-10). 세무 자료에 없는 것들 —
+  // 특허·연구소·공장등록·수출실적·인증 등.
+  // ⚠ **값이 없는 키는 「아니오」가 아니라 「대답 안 함」이다.** 판정하지 않는다.
+  selfCheck?: Partial<Record<string, boolean>>;
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserSession, Grant, BizCategory, BizRegions, BizRegionType } from '../types';
 import { CsvService } from '../services/csvService';
-import { matchesRegion, matchesCategory, scoreAllGrants, matchesInterests } from '../services/matchingService';
+import { matchesRegion, matchesCategory, scoreAllGrants, matchesInterests, SELF_CHECK_ITEMS } from '../services/matchingService';
 import { GrantCard } from '../components/GrantCard';
 import { Search, Filter, LogOut, RefreshCw, LayoutGrid, Landmark, Cpu, Users, Ship, ShoppingBag, Sprout, Briefcase as ManagementIcon, MoreHorizontal, Heart, Sparkles, CheckCircle2, ListFilter, Phone, Mail, ChevronDown } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -65,13 +65,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [recommendLimit, setRecommendLimit] = useState(6);
   const [keywordLimit, setKeywordLimit] = useState(6);
 
+  // 고객사 자기 체크 (C-10) — 특허·연구소·공장등록처럼 세무 자료에 없는 항목.
+  // 사업자번호별로 이 브라우저에만 남긴다. 서버로 보내지 않는다.
+  const SELF_CHECK_KEY = `daehan_selfcheck_${session.identifier}`;
+  const [selfCheck, setSelfCheck] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(SELF_CHECK_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }   // 시크릿 창·저장 차단 등 — 없으면 없는 대로 동작한다
+  });
+
   const [sortMode, setSortMode] = useState<SortMode>(session.type === 'CLIENT' ? 'match' : 'deadline');
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
 
   // 매칭 점수: 고객사 지역·업종 + 선택한 관심 키워드로 전체 공고 점수화
+  // 체크 결과를 세션에 실어 매칭으로 넘긴다
+  const scoringSession = useMemo(() => ({ ...session, selfCheck }), [session, selfCheck]);
+
   const matchScores = useMemo(
-    () => scoreAllGrants(grants, session, selectedInterests),
-    [grants, session, selectedInterests]
+    () => scoreAllGrants(grants, scoringSession, selectedInterests),
+    [grants, scoringSession, selectedInterests]
   );
 
   // ① 맞춤 추천 목록: 다른 지역·시군 전용(점수 0)은 제외, 점수 높은 순
@@ -128,6 +141,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     setFavorites(prev =>
       prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
     );
+  };
+
+  // 체크는 켜고 끄기만 한다 — 「아니오」와 「대답 안 함」을 구분하려고 값이 false 면 키를 지운다
+  const toggleSelfCheck = (key: string) => {
+    setSelfCheck(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key]; else next[key] = true;
+      try { localStorage.setItem(SELF_CHECK_KEY, JSON.stringify(next)); } catch { /* 저장 못 해도 동작한다 */ }
+      return next;
+    });
   };
 
   const toggleInterest = (keyword: string) => {
@@ -268,6 +291,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     ))}
                 </div>
 
+                {/* 우리 회사에 해당하는 것 — 세무 자료에 없는 값은 본인만 안다 (C-10) */}
+                {session.type === 'CLIENT' && (
+                  <div className="mb-8 border-t border-slate-100 pt-6">
+                    <p className="text-sm font-bold text-slate-700 mb-1">우리 회사에 해당하는 것이 있나요?</p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      특허·연구소·공장등록처럼 세무 자료에 없는 항목입니다.
+                      체크하시면 그 조건이 걸린 공고를 먼저 보여드립니다. 건너뛰셔도 됩니다.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {SELF_CHECK_ITEMS.map(item => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => toggleSelfCheck(item.key)}
+                          title={item.hint || undefined}
+                          className={`px-3 py-2.5 rounded-lg border text-left text-xs transition-all flex items-start gap-2
+                            ${selfCheck[item.key]
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200'}`}
+                        >
+                          <span className={`mt-0.5 shrink-0 w-4 h-4 rounded border flex items-center justify-center
+                            ${selfCheck[item.key] ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
+                            {selfCheck[item.key] && <CheckCircle2 size={12} className="text-white" />}
+                          </span>
+                          <span>
+                            <span className="font-semibold block leading-snug">{item.label}</span>
+                            {item.hint && <span className="text-[11px] text-slate-400">{item.hint}</span>}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                     <Button
                         variant="ghost"
@@ -280,10 +337,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     <Button
                         fullWidth
                         onClick={() => setShowInterestSelector(false)}
-                        disabled={selectedInterests.length === 0}
+                        disabled={selectedInterests.length === 0 && Object.keys(selfCheck).length === 0}
                         className="py-4 text-lg shadow-lg shadow-blue-200"
                     >
-                        {selectedInterests.length}개 키워드로 매칭 시작
+                        {selectedInterests.length > 0
+                          ? `${selectedInterests.length}개 키워드로 매칭 시작`
+                          : '매칭 시작'}
                     </Button>
                 </div>
             </div>

@@ -4,7 +4,7 @@
 // 우리 쪽 매출은 구간이고(원본 금액은 브라우저로 안 내려온다) 업력은 만 년수라,
 // 경계에 걸치면 실제값을 모른다. 그때 「자격 없다」는 신호를 주면 안 된다.
 import { describe, expect, it } from 'vitest';
-import { conditionCheck, scoreGrant, unverifiableConditions } from './matchingService';
+import { conditionCheck, scoreGrant, selfCheckResult, unverifiableConditions } from './matchingService';
 import type { Grant, UserSession } from '../types';
 
 const 억 = 100_000_000;
@@ -186,5 +186,54 @@ describe('scoreGrant — 경고가 카드까지 간다', () => {
   it('우리 값을 모르면 전처럼 「확인 필요」로 남는다', () => {
     const r = scoreGrant(카드수수료, base(), []);
     expect(r.checkPoints).toEqual(['매출액']);
+  });
+});
+
+// ── 고객사 자기 체크 (C-10) ─────────────────────────────────────────────────
+// 특허·연구소·공장등록은 세무 자료에 없다. 본인에게 물어서 판정한다.
+// **「아니오」와 「대답 안 함」은 다르다** — 대답하지 않았으면 전처럼 「확인 필요」다.
+describe('selfCheckResult — 본인이 체크한 항목', () => {
+  const 특허공고 = grant({ targetFlags: ['조건:특허'], title: 'IP 담보대출 연계 지식재산평가 지원' });
+  const sess = (selfCheck?: Record<string, boolean>): UserSession =>
+    ({ type: 'CLIENT', identifier: '1', ...(selfCheck ? { selfCheck } : {}) });
+
+  it('체크했으면 조건 충족으로 보고 「확인 필요」에서 뺀다', () => {
+    const r = selfCheckResult(특허공고, sess({ patent: true }));
+    expect(r.matched).toEqual(['특허·실용신안·상표권 보유 조건 충족']);
+    expect(r.warnings).toEqual([]);
+    expect(unverifiableConditions(특허공고, sess({ patent: true }))).toEqual([]);
+  });
+
+  it('해당 없다고 하면 주의 표시 — 그래도 제외하지 않는다', () => {
+    const r = selfCheckResult(특허공고, sess({ patent: false }));
+    expect(r.warnings).toHaveLength(1);
+    expect(r.matched).toEqual([]);
+    expect(scoreGrant(특허공고, sess({ patent: false }), []).score).toBeGreaterThan(0);
+  });
+
+  it('대답하지 않았으면 판정하지 않는다 — 전처럼 「확인 필요」로 남는다', () => {
+    expect(selfCheckResult(특허공고, sess()).judged.size).toBe(0);
+    expect(selfCheckResult(특허공고, sess({ export: true })).judged.size).toBe(0);
+    expect(unverifiableConditions(특허공고, sess({ export: true }))).toEqual(['특허·지식재산권']);
+  });
+
+  it('공고에 그 조건이 없으면 체크해도 아무 일도 없다', () => {
+    const 일반공고 = grant({ targetFlags: ['소상공인'] });
+    const r = selfCheckResult(일반공고, sess({ patent: true, export: true }));
+    expect(r).toEqual({ matched: [], warnings: [], judged: new Set() });
+  });
+
+  it('충족한 공고는 점수가 올라간다 — 위로 올려 보여주기 위해서다', () => {
+    const withCheck = scoreGrant(특허공고, sess({ patent: true }), []).score;
+    const without = scoreGrant(특허공고, sess(), []).score;
+    expect(withCheck).toBeGreaterThan(without);
+  });
+
+  it('한 공고에서 여러 항목이 걸리면 함께 본다', () => {
+    const g = grant({ targetFlags: ['조건:특허', '조건:연구소', '수출실적'] });
+    const r = selfCheckResult(g, sess({ patent: true, lab: true, export: false }));
+    expect(r.matched).toHaveLength(2);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.judged.size).toBe(3);
   });
 });
