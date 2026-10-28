@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { readFile } from 'node:fs/promises';
+import { smes24Attachments } from './grant-attachments.mjs';
 
 export const SOURCE_PREFIX = { manual: 'MANUAL-', smes24: 'SMES24-' };
 
@@ -171,6 +172,9 @@ export function smes24ToItem(it) {
     // 지역명('서울|경기')을 해시태그로 넘겨 기업마당 공고와 같은 지역 판정을 받게 한다
     hashtags: pick(it, ['areaNm']).split('|').map(s => s.trim()).filter(Boolean).join(','),
     inqireCo: 0,
+    // 첨부파일 — 중소벤처24 도 주소를 API 로 그대로 준다(A-2).
+    // 동기화가 이 값을 policy_grants.attachments 에 담는다
+    attachments: smes24Attachments(it),
   };
 }
 

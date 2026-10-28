@@ -19,6 +19,7 @@
 
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { extractThresholds } from './grant-thresholds.mjs';
+import { attachmentsOrNull, bizinfoAttachments } from './grant-attachments.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SOURCE_PREFIX, dropDuplicates, fetchSmes24Items, loadManualItems, protectedPrefixes } from './extra-sources.mjs';
@@ -474,17 +475,31 @@ async function syncToSupabase(records, protectPrefixes = []) {
   const skipped = records.length - rows.length;
   if (skipped > 0) console.warn(`[sync-bizinfo] 공고 ID(pblancId) 없는 ${skipped}건은 수파베이스 업서트에서 제외`);
 
-  // conditions 칸이 아직 없는 DB 에서도 동기화가 죽지 않게 한다.
-  // 마이그레이션(supabase/migrations/20261027_policy_grants_conditions.sql)을 아직 안 돌렸으면
-  // 그 칸만 빼고 올린다 — **동기화 전체가 실패해 공고가 사라지는 쪽이 훨씬 나쁘다.**
-  let hasConditions = true;
-  try {
-    const probe = await fetch(`${base}/rest/v1/policy_grants?select=conditions&limit=1`, { headers });
-    hasConditions = probe.ok;
-    if (!probe.ok) console.warn('[sync-bizinfo] ⚠ policy_grants.conditions 칸이 없습니다 — 기준선은 빼고 올립니다.'
-      + ' supabase/migrations/20261027_policy_grants_conditions.sql 를 실행하세요.');
-  } catch { hasConditions = false; }
-  const payload = hasConditions ? rows : rows.map(({ conditions, ...r }) => r);
+  // 나중에 추가된 칸이 아직 없는 DB 에서도 동기화가 죽지 않게 한다.
+  // 마이그레이션을 안 돌렸으면 그 칸만 빼고 올린다 —
+  // **동기화 전체가 실패해 공고가 사라지는 쪽이 훨씬 나쁘다.**
+  const LATE_COLUMNS = [
+    ['conditions', '기준선', '20261027_policy_grants_conditions.sql'],
+    ['attachments', '첨부파일', '20261028_policy_grants_attachments.sql'],
+  ];
+  const missing = [];
+  for (const [col, label, file] of LATE_COLUMNS) {
+    let ok = false;
+    try {
+      const probe = await fetch(`${base}/rest/v1/policy_grants?select=${col}&limit=1`, { headers });
+      ok = probe.ok;
+    } catch { ok = false; }
+    if (!ok) {
+      missing.push(col);
+      console.warn(`[sync-bizinfo] ⚠ policy_grants.${col} 칸이 없습니다 — ${label}은 빼고 올립니다.`
+        + ` supabase/migrations/${file} 를 실행하세요.`);
+    }
+  }
+  const payload = missing.length === 0 ? rows : rows.map((r) => {
+    const copy = { ...r };
+    for (const col of missing) delete copy[col];
+    return copy;
+  });
 
   try {
     // 1) 500건씩 나눠 업서트 (pblanc_id 충돌 시 갱신)
@@ -710,6 +725,9 @@ async function main() {
       sigungu_codes: extractSigunguCodes(title, hashtagsText, regionCodes),
       target_flags: extractTargetFlags(title, target, summaryFull),
       conditions: conditionsFor(title, target, summaryFull),
+      // 첨부파일 주소 (A-2) — 기업마당은 fileNm/flpthNm, 중소벤처24는 변환 때 미리 담아 온다.
+      // **주소만 모은다. 내려받지 않는다** — 그건 A-3 의 몫이다.
+      attachments: attachmentsOrNull(item.attachments ?? bizinfoAttachments(item)),
       support_amount: supportAmount,
       views: Number(views) || 0,
     });
@@ -742,6 +760,12 @@ async function main() {
   const condTally = { revenue: 0, years: 0, employees: 0 };
   for (const r of grantRecords) for (const k of Object.keys(r.conditions ?? {})) condTally[k]++;
   console.log(`[sync-bizinfo] 자격 기준선 추출: 매출 ${condTally.revenue}건 · 업력 ${condTally.years}건 · 근로자수 ${condTally.employees}건`);
+  const attCount = grantRecords.filter(r => r.attachments).length;
+  const attFiles = grantRecords.reduce((n, r) => n + (r.attachments?.length ?? 0), 0);
+  const extTally = {};
+  for (const r of grantRecords) for (const a of r.attachments ?? []) extTally[a.ext || '(없음)'] = (extTally[a.ext || '(없음)'] ?? 0) + 1;
+  console.log(`[sync-bizinfo] 첨부파일: ${attCount}건의 공고 · 파일 ${attFiles}개 — `
+    + Object.entries(extTally).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · '));
   const flagTally = {};
   for (const r of grantRecords) for (const f of r.target_flags) flagTally[f] = (flagTally[f] || 0) + 1;
   console.log(`[sync-bizinfo] 시·군 전용 판정 ${sigunguCount}건 / 자격태그 보유 ${flagCount}건 / 지원금액 추출 ${amountFound}건`);
