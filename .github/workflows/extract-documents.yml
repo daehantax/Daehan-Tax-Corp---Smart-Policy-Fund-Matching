@@ -44,3 +44,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           EXTRACT_BATCH: ${{ inputs.batch || '200' }}
         run: node scripts/extract-documents.mjs
+
+      # 뽑은 글자에서 제외 업종을 읽어 공고에 담는다 (C-12).
+      # 추출이 중간에 실패해도 그때까지 모인 글자로는 돌려 둔다 — if: always()
+      - name: Read excluded industries
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/apply-exclusions.mjs

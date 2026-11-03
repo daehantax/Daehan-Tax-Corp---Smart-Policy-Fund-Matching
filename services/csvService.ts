@@ -130,6 +130,14 @@ function mapSupabaseRow(row: any): Grant {
     conditions: row.conditions && typeof row.conditions === 'object' && !Array.isArray(row.conditions)
       ? row.conditions
       : undefined,
+    // 제외 업종도 마찬가지 — 첨부 글자를 읽는 별도 단계(apply-exclusions.mjs)가 채운다.
+    // 꼬리표가 하나도 없으면 없는 것으로 둔다. 빈 배열과 「모른다」를 섞지 않으려는 것이다
+    excludedIndustries: row.excluded_industries
+      && typeof row.excluded_industries === 'object'
+      && Array.isArray(row.excluded_industries.tags)
+      && row.excluded_industries.tags.length > 0
+      ? row.excluded_industries
+      : undefined,
     views: Number(row.views) || 0,
     tags: computeSmartTags({
       title: row.title, category: row.category, subCategory: row.sub_category,

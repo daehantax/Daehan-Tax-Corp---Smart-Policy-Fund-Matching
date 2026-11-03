@@ -96,6 +96,7 @@ export const MockDbService = {
           employeeMonth: num(data.employeeMonth),
           employeeMonths: num(data.employeeMonths),
           industryCode: data.industryCode || undefined,
+          industryTags: Array.isArray(data.industryTags) ? data.industryTags : undefined,
           region: CsvService.mapRegion(data.regionHint || ''),
           sigungu: CsvService.mapSigungu(data.regionHint || ''),
         },

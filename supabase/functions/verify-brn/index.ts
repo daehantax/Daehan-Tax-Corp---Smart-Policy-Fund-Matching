@@ -182,6 +182,36 @@ async function loadProfile(admin: any, clientId: string, facts: ClientFacts) {
   }
 }
 
+/**
+ * 거래처의 **업종 성격 꼬리표**를 읽는다 (WORK_PLAN C-12).
+ *
+ * 공고는 제외 업종을 통계청 KSIC 5자리로 적고 우리는 국세청 6자리를 쓴다 —
+ * 서로 변환되지 않아서, 양쪽을 같은 꼬리표로 바꿔 두고 꼬리표끼리 맞춘다.
+ * 그 대응표가 `industry_code_tags` 이고 **미리 채워 둔 것**이다.
+ *
+ * 돌려주는 것은 꼬리표 이름뿐이다 — 업종코드 자체는 이미 따로 내려가고 있고,
+ * 여기서 새로 나가는 개인정보는 없다.
+ *
+ * 표가 아직 없거나 코드가 비면 **빈 배열**이다. 「해당 없음」이 아니라 「모른다」로 쓴다 —
+ * 화면은 꼬리표가 없으면 경고를 띄우지 않는다.
+ */
+async function loadIndustryTags(admin: any, industryCode: string): Promise<string[]> {
+  const code = String(industryCode ?? '').trim();
+  if (!code) return [];
+  try {
+    const { data, error } = await admin
+      .from('industry_code_tags')
+      .select('tags')
+      .eq('code', code)
+      .maybeSingle();
+    if (error) throw error;
+    return Array.isArray(data?.tags) ? data.tags : [];
+  } catch (err) {
+    console.error('[verify-brn] 업종 꼬리표 조회 실패(확인은 계속):', err);
+    return [];
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsFor(req) });
@@ -283,6 +313,7 @@ Deno.serve(async (req) => {
     // ⚠ 여기서 실패해도 확인 자체는 성공시킨다. 수치는 거들 뿐이고,
     //   이것 때문에 고객사가 로그인을 못 하면 안 된다.
     const profile = await loadProfile(admin, match.id, match);
+    const industryTags = await loadIndustryTags(admin, match.industry_code ?? '');
 
     // 대표자 성명(ceoName)은 응답에 담지 않는다 — 화면에서 쓰지 않는 개인정보다.
     return json(req, {
@@ -295,8 +326,11 @@ Deno.serve(async (req) => {
       isYouthOwner,
       isFemaleOwner,
       // ⚠ 업종코드는 국세청 6자리다. 공고의 업종 조건은 통계청 KSIC 5자리라 서로 변환되지
-      //   않는다(WORK_PLAN A-11). 지금은 내려보내기만 하고 매칭에는 쓰지 않는다.
+      //   않는다(WORK_PLAN A-11). 코드 자체로는 아직 매칭하지 않는다.
       industryCode: match.industry_code ?? '',
+      // 대신 **꼬리표로** 맞춘다 — 미리 붙여 둔 industry_code_tags 를 읽는다 (C-12).
+      // 빈 배열은 「해당 없음」이 아니라 「모른다」다. 화면은 경고를 띄우지 않는다
+      industryTags,
       ...profile,
     });
   } catch (err) {

@@ -18,6 +18,10 @@ export interface Grant {
   // 공고 본문에서 읽어낸 자격 기준선 (DB conditions 컬럼 — WORK_PLAN C-9).
   // ⚠ **읽어낸 축만 담긴다. 없는 축은 「제한 없음」이 아니라 「못 읽었다」는 뜻이다.**
   conditions?: GrantConditions;
+  // 공고가 제외하는 업종 (DB excluded_industries 컬럼 — WORK_PLAN C-12).
+  // ⚠ 없으면 「제외 업종이 없다」가 아니라 「못 읽었다」는 뜻이다.
+  // ⚠ 이 값으로 공고를 지우지 않는다 — **경고**로만 쓴다.
+  excludedIndustries?: GrantExclusions;
   
   // Optional fields for UI enhancements (can be inferred or AI-generated)
   summary?: string;
@@ -39,6 +43,17 @@ export interface GrantConditions {
   revenue?: ConditionRange;
   years?: ConditionRange;
   employees?: ConditionRange;
+}
+
+/**
+ * 공고가 제외하는 업종 (WORK_PLAN C-12).
+ * `tags` 는 scripts/industry-sectors.mjs 의 꼬리표 11종이고,
+ * 거래처 쪽 `UserSession.industryTags` 와 **같은 말**이라 그대로 맞춰 보면 된다.
+ */
+export interface GrantExclusions {
+  tags: string[];
+  ksic?: string[];          // 공고가 코드까지 적어 준 경우 (통계청 5자리)
+  standardList?: boolean;   // 「중소기업 정책자금 융자제외 대상업종」을 참조하는 공고
 }
 
 export interface UserSession {
@@ -69,6 +84,10 @@ export interface UserSession {
   employeeMonth?: number;
   employeeMonths?: number;   // 그 해 기록된 달 수. 1~2달뿐이면 대표값으로 보기 약하다
   industryCode?: string;     // 국세청 업종코드 6자리 ⚠ 공고의 KSIC 5자리와 호환되지 않는다
+  // 업종 성격 꼬리표 (WORK_PLAN C-12). 국세청 코드를 미리 바꿔 둔 것 —
+  // 공고의 제외 업종(KSIC)과 이 꼬리표끼리 맞춘다.
+  // ⚠ 빈 배열은 「해당 없음」이 아니라 「모른다」다 — 경고를 띄우지 않는다.
+  industryTags?: string[];
   // 고객사가 직접 체크한 항목 (WORK_PLAN C-10). 세무 자료에 없는 것들 —
   // 특허·연구소·공장등록·수출실적·인증 등.
   // ⚠ **값이 없는 키는 「아니오」가 아니라 「대답 안 함」이다.** 판정하지 않는다.

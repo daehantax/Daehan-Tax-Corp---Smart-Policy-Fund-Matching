@@ -7,6 +7,8 @@ import {
   pickSidoCodes,
   sigunguBelongsTo,
 } from './geo';
+// 업종 꼬리표 정의는 동기화 스크립트와 **같은 파일**을 쓴다 — 둘이 갈라지면 판정이 조용히 꺼진다
+import { sectorLabel } from '../scripts/industry-sectors.mjs';
 
 // ==============================================================================
 // 매칭 서비스 — 수파베이스 policy_grants 데이터 기반 공고 매칭
@@ -414,6 +416,31 @@ export function selfCheckResult(g: Grant, session: UserSession):
 }
 
 /**
+ * 공고가 제외하는 업종에 **우리 거래처가 들어가는가** (WORK_PLAN C-12).
+ *
+ * 양쪽 다 꼬리표로 미리 바꿔 두었으므로 겹치는지만 보면 된다 —
+ * 공고는 통계청 KSIC, 우리는 국세청 업종코드라 코드끼리는 맞출 수 없다.
+ *
+ * ⚠ **맞아도 제외(score 0)하지 않는다.** 경고만 띄우고 순위를 내린다:
+ *   · 공고가 「단, ○○는 신청 가능」 예외를 두는 일이 흔하다
+ *   · 거래처가 업종을 여러 개 하거나 주업종이 바뀌었을 수 있다
+ *   · 우리가 첨부에서 잘못 읽었을 수 있다
+ *
+ * 업종코드를 모르는 거래처(79곳)는 `industryTags` 가 비어 **아무 말도 하지 않는다** —
+ * 모르는 것과 해당 없는 것은 다르다.
+ */
+export function excludedIndustryWarnings(
+  g: Grant,
+  session: Pick<UserSession, 'industryTags'>,
+): string[] {
+  const mine = session.industryTags ?? [];
+  const theirs = g.excludedIndustries?.tags ?? [];
+  if (mine.length === 0 || theirs.length === 0) return [];
+  const hit = mine.filter((t) => theirs.includes(t));
+  return hit.map((t) => `${sectorLabel(t)}은 이 공고의 제외 업종입니다 — 공고문을 확인하세요`);
+}
+
+/**
  * 공고에 있지만 우리가 판정하지 못한 자격 조건 이름들.
  * 세션을 주면 **판정이 끝난 축은 빠진다** — 「확인 필요」라고 더 말할 필요가 없다.
  */
@@ -431,6 +458,9 @@ export function unverifiableConditions(g: Grant, session?: UserSession): string[
 const INDUSTRY_MISMATCH_PENALTY = 20;
 // 수치 조건은 업종 추측보다 근거가 분명하다(공고에 숫자가 적혀 있고 우리 값도 신고자료다)
 const CONDITION_MISMATCH_PENALTY = 30;
+// 제외 업종은 근거가 제일 분명하다 — 공고가 업종코드까지 적어 두고, 우리 쪽도 신고된 업종코드다.
+// 그래도 **제외하지 않는다.** 공고가 「단, ○○는 가능」 예외를 두는 일이 흔하다(C-12 실측).
+const EXCLUDED_INDUSTRY_PENALTY = 45;
 // 체크한 조건을 충족하면 그 공고를 위로 올린다 (한 공고에 최대 2개까지만 센다)
 const SELF_CHECK_BONUS = 15;
 
@@ -535,6 +565,15 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   //      충족하면 가점 — 그 조건이 걸린 공고를 **위로 올려** 보여주기 위해서다.
   //      해당 없다고 했으면 감점 + 주의 표시. 역시 제외하지 않는다 —
   //      체크를 잘못 읽었을 수도 있고, 공고가 예외를 둘 수도 있다.
+  // 3-3) 제외 업종 (C-12). 공고가 제외 목록에 올린 업종에 우리 업종코드가 들어가는가.
+  //      근거가 제일 분명해서 감점이 제일 크다. **그래도 제외하지 않는다** —
+  //      공고가 「단, ○○는 신청 가능」 예외를 두는 일이 흔하다.
+  const excluded = excludedIndustryWarnings(g, session);
+  if (excluded.length > 0) {
+    score -= EXCLUDED_INDUSTRY_PENALTY;
+    warnings.push(...excluded);
+  }
+
   const self = selfCheckResult(g, session);
   if (self.matched.length > 0) {
     score += Math.min(self.matched.length * SELF_CHECK_BONUS, SELF_CHECK_BONUS * 2);
