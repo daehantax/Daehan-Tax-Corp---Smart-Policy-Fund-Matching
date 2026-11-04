@@ -355,6 +355,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 키워드 선택하기
               </button>
             </div>
+
+            {/* 면책 — 우리 추천이 심사 결과를 보장하지 않는다. 공고 안의 자격은 우리가 10% 남짓만
+                읽어 냈고, 나머지는 「조건이 없다」가 아니라 「못 읽었다」는 뜻이다. */}
+            <p className="mt-4 pt-3 border-t border-white/15 text-[11px] leading-relaxed text-blue-300">
+              추천 결과는 참고용이며 최종 신청 가능 여부는 해당 사업의 공고 및 심사 기준에 따라 결정됩니다.
+            </p>
           </div>
 
           {recommendedGrants.length > 0 ? (
