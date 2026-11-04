@@ -271,8 +271,11 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    // 수임 해지(해임)된 거래처는 고객사로 인정하지 않는다
-    const match = (data ?? []).find((c: any) => c.customer_type !== '해임') ?? null;
+    // 기장 거래처만 고객사로 인정한다 (2026-11-04).
+    //   customer_type 은 기장 · 신고대리 · 해임 셋뿐이다(shared-db 0001_init.sql CHECK).
+    //   신고대리는 신고만 맡은 곳이라 이 서비스 대상이 아니고, 해임은 수임이 끝났다.
+    // ⚠ 화이트리스트로 적는다 — customer_type 에 값이 더 생겨도 조용히 통과하지 않는다.
+    const match = (data ?? []).find((c: any) => c.customer_type === '기장') ?? null;
     if (!match) {
       return json(req, { found: false });
     }
