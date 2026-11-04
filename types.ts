@@ -88,10 +88,6 @@ export interface UserSession {
   // 공고의 제외 업종(KSIC)과 이 꼬리표끼리 맞춘다.
   // ⚠ 빈 배열은 「해당 없음」이 아니라 「모른다」다 — 경고를 띄우지 않는다.
   industryTags?: string[];
-  // 고객사가 직접 체크한 항목 (WORK_PLAN C-10). 세무 자료에 없는 것들 —
-  // 특허·연구소·공장등록·수출실적·인증 등.
-  // ⚠ **값이 없는 키는 「아니오」가 아니라 「대답 안 함」이다.** 판정하지 않는다.
-  selfCheck?: Partial<Record<string, boolean>>;
   region?: string;    // Added for auto-filtering
   sigungu?: string[]; // 사업장 주소의 시·군·구 (예: ['성남시','분당구']) — 관내 전용 사업 판정용
   companyName?: string; // Added for display

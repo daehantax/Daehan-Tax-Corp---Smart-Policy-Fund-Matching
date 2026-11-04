@@ -10,7 +10,7 @@ import {
   extractTargetFlags,
   __setSidoOf,
 } from '../scripts/sync-bizinfo.mjs';
-import { INDUSTRY_MISMATCH_FLAGS, OWNER_MISMATCH_FLAGS, SELF_CHECK_FLAGS } from './matchingService';
+import { INDUSTRY_MISMATCH_FLAGS, OWNER_MISMATCH_FLAGS, SELF_DECLARED_FLAGS } from './matchingService';
 
 // 동기화 스크립트는 Node 단독 실행이라 앱의 TS 모듈을 불러올 수 없고, 같은 규칙을
 // 복제해 두고 있다(주석으로 "함께 수정할 것"이라 표시). 한쪽만 고치면 DB에 저장되는
@@ -111,7 +111,7 @@ describe('앱의 판정 규칙이 참조하는 플래그를 동기화 스크립�
     '조건:체납': { title: '융자 지원사업', target: '중소기업', summary: '☞ 국세 및 지방세 체납이 없는 기업' },
   };
 
-  it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS, ...SELF_CHECK_FLAGS])('%s', (flag) => {
+  it.each([...INDUSTRY_MISMATCH_FLAGS, ...OWNER_MISMATCH_FLAGS, ...SELF_DECLARED_FLAGS])('%s', (flag) => {
     const s = SAMPLES[flag];
     expect(s, `앱 규칙에 있는 '${flag}' 의 샘플 입력이 이 테스트에 없다`).toBeDefined();
     expect(extractTargetFlags(s.title, s.target, s.summary)).toContain(flag);

@@ -248,7 +248,7 @@ const UNVERIFIABLE_FLAG_LABELS: Record<string, string> = {
   '수출실적': '수출 실적',
   'KSIC명시': '업종코드',
   '조건:인증': '인증 보유',
-  // 고객사가 직접 체크하면 판정할 수 있는 것들 (C-10) — 체크 전에는 여기 남는다
+  // 고객사만 아는 것들 — 우리가 판정하지 않고 「확인 필요」로 넘긴다 (SELF_DECLARED_FLAGS 참고)
   '조건:특허': '특허·지식재산권',
   '조건:연구소': '기업부설연구소',
   '조건:공장등록': '공장등록증',
@@ -359,61 +359,20 @@ export function conditionCheck(g: Grant, session: UserSession): { warnings: stri
   return { warnings, judged };
 }
 
-// ── 고객사 자기 체크 (WORK_PLAN C-10) ───────────────────────────────────────
+// ── 고객사만 아는 조건 ───────────────────────────────────────────────────────
 //
-// 특허·연구소·공장등록 같은 것은 **세무 자료에 없다.** 우리가 알 길이 없어서
-// 지금까지 전부 「공고문 확인 필요」로 넘겼다. 고객사 본인은 아는 값이니 직접 묻는다.
+// 특허·연구소·공장등록 같은 것은 **세무 자료에 없다.** 2026-10-28 에 고객사가 직접
+// 체크하게 해 봤다가(C-10), 2026-11-04 에 **걷어냈다** — 관심 키워드 6개만 고르는 쪽이
+// 간단하고, 체크를 잘못 누르면 조용히 점수가 틀어졌다.
 //
-// 세 가지 상태를 구분한다 — **「아니오」와 「대답 안 함」은 다르다.**
-//   true      → 조건 충족. 「확인 필요」에서 빼고 가점을 준다
-//   false     → 주의 표시. 감점하되 **제외하지 않는다**(체크를 잘못 읽었을 수 있다)
-//   undefined → 지금까지와 똑같이 「공고문 확인 필요」로 남긴다
+// 플래그 자체는 남는다. 공고에 이 조건이 걸려 있으면 `unverifiableConditions` 가
+// **「공고문 확인 필요」로 알린다** — 판정하지 않고 사람에게 넘긴다(C-10 이전과 같다).
 
-export const SELF_CHECK_ITEMS = [
-  { key: 'patent', flag: '조건:특허', label: '특허·실용신안·상표권 보유',
-    hint: '출원 중인 것도 인정하는 공고가 많습니다' },
-  { key: 'lab', flag: '조건:연구소', label: '기업부설연구소 또는 연구개발전담부서',
-    hint: '한국산업기술진흥협회 인정서 기준' },
-  { key: 'factory', flag: '조건:공장등록', label: '공장등록증 보유',
-    hint: '제조시설을 갖추고 등록을 마친 경우' },
-  { key: 'export', flag: '수출실적', label: '수출실적 있음',
-    hint: '직수출·간접수출 모두 해당합니다' },
-  { key: 'cert', flag: '조건:인증', label: '벤처·이노비즈·메인비즈·ISO 등 인증 보유',
-    hint: '' },
-  { key: 'insurance', flag: '조건:4대보험', label: '4대보험 가입 사업장',
-    hint: '' },
-  { key: 'noArrears', flag: '조건:체납', label: '국세·지방세 체납 없음',
-    hint: '' },
-] as const;
-
-export type SelfCheckKey = typeof SELF_CHECK_ITEMS[number]['key'];
 /** 동기화 스크립트가 이 플래그들을 실제로 붙이는지 services/syncParity.test.ts 가 대조한다 */
-export const SELF_CHECK_FLAGS = SELF_CHECK_ITEMS.map((i) => i.flag);
-
-/**
- * 고객사가 체크한 내용과 공고 조건을 맞춰 본다.
- * `matched` 는 충족한 항목(카드에 「○○ 조건 충족」으로 보여 준다),
- * `warnings` 는 해당 없다고 답한 항목, `judged` 는 「확인 필요」에서 뺄 플래그다.
- */
-export function selfCheckResult(g: Grant, session: UserSession):
-  { matched: string[]; warnings: string[]; judged: Set<string> } {
-  const matched: string[] = [];
-  const warnings: string[] = [];
-  const judged = new Set<string>();
-  const answers = session.selfCheck;
-  if (!answers) return { matched, warnings, judged };
-  const flags = g.targetFlags ?? [];
-
-  for (const item of SELF_CHECK_ITEMS) {
-    if (!flags.includes(item.flag)) continue;
-    const answer = answers[item.key];
-    if (answer === undefined) continue;   // 대답하지 않았다 — 판정하지 않는다
-    judged.add(item.flag);
-    if (answer) matched.push(`${item.label} 조건 충족`);
-    else warnings.push(`${item.label} — 해당 없다고 체크하셨습니다`);
-  }
-  return { matched, warnings, judged };
-}
+export const SELF_DECLARED_FLAGS = [
+  '조건:특허', '조건:연구소', '조건:공장등록', '수출실적',
+  '조건:인증', '조건:4대보험', '조건:체납',
+] as const;
 
 /**
  * 공고가 제외하는 업종에 **우리 거래처가 들어가는가** (WORK_PLAN C-12).
@@ -448,8 +407,6 @@ export function unverifiableConditions(g: Grant, session?: UserSession): string[
   const flags = g.targetFlags ?? [];
   const judged = session ? conditionCheck(g, session).judged : new Set<Axis>();
   const judgedFlags = new Set([...judged].map((a) => AXIS_FLAG[a]));
-  // 고객사가 직접 체크해 판정이 끝난 항목도 「확인 필요」에서 뺀다
-  if (session) for (const f of selfCheckResult(g, session).judged) judgedFlags.add(f);
   return Object.entries(UNVERIFIABLE_FLAG_LABELS)
     .filter(([flag]) => flags.includes(flag) && !judgedFlags.has(flag))
     .map(([, label]) => label);
@@ -461,8 +418,6 @@ const CONDITION_MISMATCH_PENALTY = 30;
 // 제외 업종은 근거가 제일 분명하다 — 공고가 업종코드까지 적어 두고, 우리 쪽도 신고된 업종코드다.
 // 그래도 **제외하지 않는다.** 공고가 「단, ○○는 가능」 예외를 두는 일이 흔하다(C-12 실측).
 const EXCLUDED_INDUSTRY_PENALTY = 45;
-// 체크한 조건을 충족하면 그 공고를 위로 올린다 (한 공고에 최대 2개까지만 센다)
-const SELF_CHECK_BONUS = 15;
 
 // 동기화 스크립트가 실제로 붙이는 플래그 이름과 일치하는지 테스트에서 대조한다
 // (services/syncParity.test.ts). 이름이 어긋나면 판정이 조용히 꺼진다.
@@ -572,16 +527,6 @@ export function scoreGrant(g: Grant, session: UserSession, interests: string[]):
   if (excluded.length > 0) {
     score -= EXCLUDED_INDUSTRY_PENALTY;
     warnings.push(...excluded);
-  }
-
-  const self = selfCheckResult(g, session);
-  if (self.matched.length > 0) {
-    score += Math.min(self.matched.length * SELF_CHECK_BONUS, SELF_CHECK_BONUS * 2);
-    reasons.push(...self.matched);
-  }
-  if (self.warnings.length > 0) {
-    score -= CONDITION_MISMATCH_PENALTY;
-    warnings.push(...self.warnings);
   }
 
   // 4) 선택한 관심 키워드와 스마트 태그 일치 (키워드당 10, 최대 20).

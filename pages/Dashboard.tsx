@@ -67,7 +67,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
   // 자기 체크(C-10)는 2026-11-04 에 화면에서 뺐다 — 관심 키워드 6개만 고르는 쪽이 간단하다.
   // ⚠ 예전에 체크해 둔 값이 브라우저에 남아 **조용히 점수에 영향을 주면 안 되므로** 지운다.
-  //   판정 로직(matchingService 의 selfCheck)은 그대로 두었다 — 되살리려면 화면만 다시 붙이면 된다.
+  //   판정 로직도 2026-11-04 에 같이 지웠다 — 이 조건들은 다시 「공고문 확인 필요」로 넘어간다.
   useEffect(() => {
     try { localStorage.removeItem(`daehan_selfcheck_${session.identifier}`); } catch { /* 못 지워도 아래에서 안 읽는다 */ }
   }, [session.identifier]);
