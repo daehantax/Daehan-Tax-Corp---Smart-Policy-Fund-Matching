@@ -1,14 +1,14 @@
 {
-  "syncedAt": "2026-11-09T02:15:34.320Z",
-  "count": 1485,
-  "expiredDropped": 493,
+  "syncedAt": "2026-11-10T02:37:51.383Z",
+  "count": 1463,
+  "expiredDropped": 319,
   "source": "bizinfo-api",
   "sources": {
-    "bizinfo": 1323,
+    "bizinfo": 1340,
     "manual": 2,
-    "smes24": 653,
-    "duplicatesDropped": 1163,
-    "smes24Received": 1816,
+    "smes24": 440,
+    "duplicatesDropped": 1167,
+    "smes24Received": 1607,
     "smes24Fields": [
       "pblancSeq",
       "creatDt",
