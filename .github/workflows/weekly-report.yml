@@ -1,0 +1,59 @@
+# 주간 신규 공고 리포트 — 지난 한 주(월~일, KST)에 처음 본 공고를 거래처 전체와 대조해
+# grant_weekly_grants · grant_weekly_matches 에 쌓는다. 디허브 /support/weekly 가 이 표를 읽는다.
+#
+# 매주 월요일 KST 06:30 — 새벽 5시 동기화가 끝난 뒤. 수동 실행도 된다:
+#   gh workflow run weekly-report.yml                      # 지난 주
+#   gh workflow run weekly-report.yml -f week=2026-11-16   # 그 주를 다시 (아무 요일이나 줘도 월요일로 맞춘다)
+#
+# 다시 돌려도 안전하다 — 그 주차만 지우고 새로 넣는다. 다른 주차는 건드리지 않는다.
+# 실패하면 기존 주차를 건드리지 않고 빨갛게 끝난다(거래처를 한 곳도 못 읽은 경우 등).
+#
+# ⚠ 커밋하는 것이 없다. 거래처 수치는 공개 저장소에 남기지 않는다 — DB 에만 담는다.
+name: Weekly grant report
+
+on:
+  schedule:
+    - cron: '30 21 * * 0'   # 일 21:30 UTC = 월 06:30 KST (동기화 05:00 뒤)
+  workflow_dispatch:
+    inputs:
+      week:
+        description: '다시 돌릴 주 (YYYY-MM-DD, 그 주의 아무 날). 비우면 지난 주'
+        required: false
+        default: ''
+      dry_run:
+        description: '계산만 하고 쓰지 않기'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Build weekly report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WEEK: ${{ inputs.week }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          if [ -n "$WEEK" ]; then args+=(--week "$WEEK"); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          npm run weekly-report -- "${args[@]}"
