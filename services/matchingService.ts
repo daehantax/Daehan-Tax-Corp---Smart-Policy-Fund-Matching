@@ -6,6 +6,7 @@ import {
   isSigungu,
   pickSidoCodes,
   sigunguBelongsTo,
+  sigunguSidoCodes,
 } from './geo';
 // 업종 꼬리표 정의는 동기화 스크립트와 **같은 파일**을 쓴다 — 둘이 갈라지면 판정이 조용히 꺼진다
 import { sectorLabel } from '../scripts/industry-sectors.mjs';
@@ -59,9 +60,57 @@ export function normalizeRegionCodes(codes: string[] | undefined): string[] {
  * ①을 ②보다 먼저 보는 이유와 ③을 ①보다 뒤에 두는 이유는 같다 — 기관명이나 권역을
  * 앞세우면 "[대전ㆍ충청]" 같은 권역 사업이 한 지역으로 좁혀져 인접 지역 고객사가
  * 자격 있는 공고를 못 본다(오탐).
+ *  ⑥ (①~④로 특정 지역이 나왔을 때만) 제목에 다른 도의 시·군이 있으면 그 도를 **더한다** — widenByTitleSigungu
+ *
  * ※ scripts/sync-bizinfo.mjs 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
  */
 export function extractRegionCodes(
+  department?: string,
+  agency?: string,
+  hashtagsText?: string,
+  title?: string,
+  bodyText?: string,
+): string[] {
+  return widenByTitleSigungu(baseRegionCodes(department, agency, hashtagsText, title, bodyText), title);
+}
+
+// 제목에서 시·군 이름 후보 — 뒤에 공백·숫자·괄호·구분점이 와야 한다(TITLE_SIGUNGU 와 같은 경계).
+// '구'는 보지 않는다: 중구·동구·서구처럼 여러 도시에 같은 이름이 있어 도를 정할 수 없다.
+const TITLE_CITY = /([가-힣]{1,4}(?:시|군))(?=[\s0-9([\]ㆍ·,/)]|$)/g;
+
+/**
+ * 이미 특정 지역으로 좁혀진 공고에, **제목에 나온 다른 도의 시·군**의 도를 더한다. 넓히기만 한다.
+ *
+ * 왜 (2026-11-23 실측 — 운영 공고 5,079건 중 이 규칙으로 바뀌는 것 4건):
+ *   · 「2026년 울산시ㆍ경주시ㆍ포항시 해오름동맹 첨단이차전지 …」 — ①이 「울산시」만 시도로 읽어 [울산].
+ *     원문은 「울산 외 경주·포항 기업에 최대 20% 할당」이라 경북 기업이 **자격 있는데 score 0 으로 지워졌다**
+ *   · 「[경기] 김해시 …」·「[경북] 양산시 …」 — 출처가 접두를 잘못 붙였다(김해·양산은 경남).
+ *     [경기]로만 읽혀 정작 김해 기업에게 안 보였다. 경남을 더하면 시·군 축이 「김해시」로 잡혀 바로잡힌다
+ *
+ * 안전장치:
+ *   · 전국·「비수도권」 같은 제외형 권역에는 손대지 않는다 — 시·군 이름만 보고 전국을 좁히면
+ *     관외 허용 공고가 지워진다(services/syncParity.test.ts 「승격 금지」, PR #18)
+ *   · 낱말 중간이면 버린다 — 「혁신기업 양산시제품」의 '양산시'
+ *   · 같은 이름이 여러 도에 있으면 버린다 — 고성군(강원·경남)
+ *   · 더하기만 하므로 §1(확실하지 않으면 제외하지 않는다)과 같은 방향이다. 해오름동맹은 경북 전체가 보게 되지만
+ *     시·군으로 좁히면 울산의 구 소재 기업이 빠지므로 시·군 축은 건드리지 않는다
+ */
+export function widenByTitleSigungu(regions: string[], title?: string): string[] {
+  if (!title || regions.includes('전국') || regions.some(r => EXCLUSIVE_ZONES[r])) return regions;
+  const out = [...regions];
+  for (const m of title.matchAll(TITLE_CITY)) {
+    const at = m.index ?? 0;
+    if (at > 0 && /[가-힣]/.test(title[at - 1])) continue;   // 낱말 중간
+    const name = m[1];
+    if (!isSigungu(name)) continue;
+    const codes = sigunguSidoCodes(name);
+    if (codes.length !== 1) continue;                         // 동명 시·군 — 도를 정할 수 없다
+    if (!out.includes(codes[0])) out.push(codes[0]);
+  }
+  return out.length >= NATIONWIDE_MIN_CODES ? regions : out;
+}
+
+function baseRegionCodes(
   department?: string,
   agency?: string,
   hashtagsText?: string,
