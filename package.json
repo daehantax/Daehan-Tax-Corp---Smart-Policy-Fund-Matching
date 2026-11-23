@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "weekly-report": "node scripts/run-ts.mjs scripts/weekly-report.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "esbuild": "^0.25.12",
     "fflate": "^0.8.3",
     "pdfjs-dist": "^6.4.299",
     "typescript": "~5.8.2",
