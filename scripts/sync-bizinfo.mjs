@@ -188,9 +188,34 @@ const NATIONWIDE_MIN_CODES = 13;
  *     ("강원 영동권 관광 가치이음" 해시태그 16개 시도 → 강원특별자치도경제진흥원 → 강원)
  *  ④ 본문의 권역 표현 (제목·기관에 단서가 전혀 없을 때만)
  *  ⑤ 전국
+ *  ⑥ (①~④로 특정 지역이 나왔을 때만) 제목에 다른 도의 시·군이 있으면 그 도를 **더한다** — widenByTitleSigungu
  * ※ services/matchingService.ts 의 extractRegionCodes 와 같은 규칙 — 함께 수정할 것
  */
 function extractRegionCodes(department, agency, hashtagsText, title, bodyText) {
+  return widenByTitleSigungu(baseRegionCodes(department, agency, hashtagsText, title, bodyText), title);
+}
+
+// ※ services/matchingService.ts 의 TITLE_CITY · widenByTitleSigungu 와 같은 규칙 — 함께 수정할 것.
+//   이미 좁혀진 지역에 제목 속 다른 도의 시·군의 도를 **더하기만** 한다(해오름동맹 「울산시ㆍ경주시ㆍ포항시」 →
+//   울산+경북, 출처가 접두를 잘못 붙인 「[경기] 김해시」 → 경기+경남). 전국·제외형 권역은 손대지 않는다.
+//   낱말 중간('양산시제품')·동명 시·군(고성군)은 버린다. 자세한 이유는 TS 쪽 주석.
+const TITLE_CITY = /([가-힣]{1,4}(?:시|군))(?=[\s0-9([\]ㆍ·,/)]|$)/g;
+function widenByTitleSigungu(regions, title) {
+  if (!title || regions.includes('전국') || regions.some(r => ZONES[r] && ZONES[r].exclude)) return regions;
+  const out = [...regions];
+  for (const m of title.matchAll(TITLE_CITY)) {
+    const at = m.index ?? 0;
+    if (at > 0 && /[가-힣]/.test(title[at - 1])) continue;
+    const name = m[1];
+    if (!SIGUNGU_BY_NAME.has(name)) continue;
+    const codes = sigunguSidoCodes(name);
+    if (codes.length !== 1) continue;
+    if (!out.includes(codes[0])) out.push(codes[0]);
+  }
+  return out.length >= NATIONWIDE_MIN_CODES ? regions : out;
+}
+
+function baseRegionCodes(department, agency, hashtagsText, title, bodyText) {
   const all = pickSidoCodes([department, agency, hashtagsText, title].filter(Boolean).join(' '));
   if (all.length > 0 && all.length < NATIONWIDE_MIN_CODES) return all;
 
